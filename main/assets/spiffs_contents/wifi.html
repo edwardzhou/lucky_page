@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>WiFi 设置</title>
+<style>
+:root{--p:#e8433f;--g:#2ecc71;--bg:#1a1a2e;--card:#16213e;--tx:#eee;--bd:#345}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:system-ui,-apple-system,sans-serif;background:var(--bg);color:var(--tx);padding:14px;max-width:620px;margin:0 auto;font-size:14px}
+nav{display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap}
+nav a{color:#8ab4ff;text-decoration:none;font-size:13px;padding:6px 10px;background:var(--card);border-radius:6px}
+nav a.on{background:var(--p);color:#fff}
+.card{background:var(--card);border-radius:12px;padding:14px;margin-bottom:12px}
+h3{font-size:15px;margin-bottom:10px;color:#cfe}
+input,select{background:#0a1730;color:var(--tx);border:1px solid var(--bd);border-radius:6px;padding:9px;font-size:14px;width:100%}
+button{background:#334;padding:9px 14px;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:14px}
+button.pri{background:var(--p)}button.mini{padding:5px 10px;font-size:12px}
+button:disabled{background:#2a2a3a;color:#666;cursor:not-allowed}
+.row{display:flex;gap:8px;align-items:center;margin-top:8px;flex-wrap:wrap}
+.grow{flex:1}
+.st{display:flex;align-items:center;gap:8px;font-size:14px;padding:6px 0}
+.dot{width:10px;height:10px;border-radius:50%;flex:0 0 auto}
+.on{background:var(--g)}.off{background:#777}.wait{background:#f39c12}
+.kv{display:grid;grid-template-columns:88px 1fr;gap:4px 10px;font-size:13px;margin-top:8px}
+.kv b{color:#9ab;font-weight:400}
+.ap{display:flex;align-items:center;gap:10px;padding:9px;border-bottom:1px solid #ffffff12;cursor:pointer}
+.ap:hover{background:#0d1b3e}
+.ap:last-child{border-bottom:none}
+.bars{font-family:monospace;color:#7fd;font-size:13px;letter-spacing:-1px}
+.lock{font-size:12px;color:#f39c12}
+.warn{color:#f39c12;font-size:12px;margin-top:8px}
+.ok{color:var(--g);font-size:12px;margin-top:8px}
+.hint{font-size:11px;color:#789;line-height:1.7;margin-top:8px}
+</style>
+</head>
+<body>
+<nav>
+<a href="/index.html">抽奖</a><a href="/prizes.html">奖池</a>
+<a href="/receipt.html">小票模板</a><a href="/logo.html">Logo</a>
+<a href="/calibrate.html">标定</a><a href="/wifi.html" class="on">WiFi</a>
+</nav>
+
+<div class="card">
+  <h3>当前状态</h3>
+  <div class="st"><span class="dot off" id="dot"></span><span id="line">读取中…</span></div>
+  <div class="kv">
+    <b>本机热点</b><span id="apinfo">—</span>
+    <b>模式</b><span id="mode">—</span>
+    <b>已连网络</b><span id="ssid">—</span>
+    <b>设备 IP</b><span id="ip">—</span>
+    <b>信号</b><span id="sig">—</span>
+    <b>时间同步</b><span id="tsync">—</span>
+    <b>AP 客户端</b><span id="clients">—</span>
+  </div>
+  <div class="row">
+    <button class="mini" onclick="refresh()">刷新</button>
+    <button class="mini" onclick="forget()">忘记全部</button>
+  </div>
+  <div class="hint">
+    本机热点始终可用：<code>lucky-page-XXXX</code> / 密码 <code>12345678</code> → <code>192.168.4.1</code>。<br>
+    <b>即使 WiFi 密码配错也不会失联</b>——热点不关，重新进来改即可。
+  </div>
+</div>
+
+<div class="card">
+  <h3>已保存网络（按优先级自动尝试）</h3>
+  <div id="saved" class="hint">无</div>
+  <div class="hint">连不上时会自动换下一个；点「优先」把它提到最前。</div>
+</div>
+
+<div class="card">
+  <h3>连接到路由器（用于自动校时）</h3>
+  <div class="row"><button class="pri" onclick="scan()" id="scanBtn">扫描周边 WiFi</button><span id="scmsg" class="hint"></span></div>
+  <div id="aplist"></div>
+  <div class="row" style="margin-top:12px;flex-direction:column;align-items:stretch;gap:8px">
+    <input id="ssid" placeholder="WiFi 名称（SSID）" autocomplete="off">
+    <input id="pass" type="password" placeholder="密码（开放网络留空）" autocomplete="new-password">
+    <div class="row">
+      <button class="pri" onclick="connect()">保存并连接</button>
+      <span class="hint">点上面扫描结果可自动填入名称</span>
+    </div>
+  </div>
+  <div id="msg" class="warn"></div>
+</div>
+
+<script>
+const $=s=>document.querySelector((s[0]==='#'||s[0]==='.')?s:('#'+s));
+let polling=null;
+
+async function refresh(){
+  try{
+    const d=await fetch('/api/wifi').then(r=>r.json());
+    const connected=d.sta_connected, configured=d.configured;
+    $('#dot').className='dot '+(connected?'on':(configured?'wait':'off'));
+    $('#line').textContent = connected ? '已连接路由器，网络正常'
+      : (configured ? '正在连接…（连不上会自动重试，不影响抽奖）' : '未配置，仅本机热点模式');
+    $('#mode').textContent = d.mode + (d.mode==='APSTA'?'（热点 + 连接路由器）':'（仅热点）');
+    $('#apinfo').innerHTML = d.ap_up
+      ? `<b style="color:#7fd">${d.ap_ssid}</b> ／ 密码 <b style="color:#7fd">12345678</b> ／ 192.168.4.1 ／ 信道 ${d.ap_channel}`
+      : '⚠ 热点未广播（设备可能在跑测试固件或 WiFi 初始化失败）';
+    $('#ssid').textContent = d.ssid || '—';
+    $('#ip').textContent = d.ip || '—';
+    $('#sig').textContent = connected ? `${'▮'.repeat(d.bars)}${'▯'.repeat(4-d.bars)}  ${d.rssi} dBm` : '—';
+    $('#tsync').textContent = d.time_synced ? '✅ 已同步（小票日期时间为真实时间）' : '未同步（小票用占位符，可在模板页手工校时）';
+    $('#clients').textContent = d.ap_clients;
+    const saved = d.saved||[];
+    savedCount = saved.length;
+    $('#saved').innerHTML = saved.length ? saved.map((n,i)=>
+      `<div class="ap" style="cursor:default">
+         <span class="grow">${i===0?'★ ':'　'}${(n.ssid||'').replace(/</g,'&lt;')}
+           ${n.has_password?'🔒':'（开放）'}</span>
+         ${i!==0?`<button class="mini" onclick="promote('${(n.ssid||'').replace(/'/g,"\\'")}')">优先</button>`:''}
+         <button class="mini del" onclick="removeSaved(${i})">删除</button>
+       </div>`).join('') : '无（还没保存任何网络）';
+    if(d.last_reason && String(d.last_reason)!=='none' && !connected){
+      $('#msg').className='warn'; $('#msg').textContent='上次断开原因：'+d.last_reason;
+    }
+    if(configured && !polling){ polling=setInterval(refresh, 3000); }
+    if(connected && polling){ clearInterval(polling); polling=null; }
+  }catch(e){ $('#line').textContent='读取失败'; }
+}
+
+async function scan(){
+  $('#scanBtn').disabled=true; $('#scmsg').textContent='扫描中（约 3 秒）…'; $('#aplist').innerHTML='';
+  try{
+    const r=await fetch('/api/wifi/scan',{method:'POST'});
+    const d=await r.json();
+    if(!r.ok){ $('#scmsg').innerHTML='⚠ '+(d.error||'扫描失败'); return; }
+    $('#scmsg').textContent=`找到 ${d.length} 个网络`;
+    $('#aplist').innerHTML = d.length? d.map(a=>
+      `<div class="ap" onclick="pick('${a.ssid.replace(/\\/g,'\\\\').replace(/'/g,"\\'")}')">
+         <span class="grow">${a.ssid.replace(/</g,'&lt;')}${a.secure?' <span class="lock">🔒</span>':''}</span>
+         <span class="bars">${'▮'.repeat(a.bars)}${'▯'.repeat(4-a.bars)}</span>
+       </div>`).join('') : '<div class="hint">没有扫描到网络（可在下方手工输入名称）</div>';
+  }catch(e){ $('#scmsg').textContent='❌ 扫描异常'; }
+  finally{ $('#scanBtn').disabled=false; }
+}
+function pick(ssid){ $('#ssid').value=ssid; $('#pass').focus(); }
+
+async function connect(){
+  const ssid=$('#ssid').value.trim(), pass=$('#pass').value;
+  if(!ssid){ $('#msg').className='warn'; $('#msg').textContent='请填写 WiFi 名称'; return; }
+  const r=await fetch('/api/wifi',{method:'PUT',body:JSON.stringify({ssid,password:pass})});
+  const d=await r.json();
+  $('#msg').className = r.ok?'ok':'warn';
+  $('#msg').textContent = r.ok?'✅ 已保存，正在连接…（状态会自动刷新）':'❌ '+(d.error||'保存失败');
+  if(r.ok){ $('#pass').value=''; refresh(); }
+}
+
+async function promote(ssid){
+  // 重新提交同一网络即可提到最前（保存逻辑：已存在则覆盖并提权）
+  const pass = prompt(`为「${ssid}」输入密码（开放网络留空）：`);
+  if(pass===null) return;
+  const r=await fetch('/api/wifi',{method:'PUT',body:JSON.stringify({ssid,password:pass})});
+  const d=await r.json();
+  $('#msg').className = r.ok?'ok':'warn';
+  $('#msg').textContent = r.ok?'已设为最高优先级，正在连接…':'❌ '+(d.error||'失败');
+  refresh();
+}
+async function removeSaved(i){
+  const last = (savedCount<=1);
+  if(!confirm(last ? '这是最后一个已保存网络。\n删除后会断开路由器、停止自动校时（热点仍可用，抽奖不受影响）。\n\n确定删除？'
+                   : '删除这个已保存网络？'))return;
+  const r=await fetch('/api/wifi',{method:'DELETE',body:JSON.stringify({index:i})});
+  $('#msg').className = r.ok?'ok':'warn';
+  $('#msg').textContent = r.ok?'已删除':'❌ 删除失败';
+  refresh();
+}
+async function forget(){
+  if(!confirm('忘记已保存的 WiFi？将断开路由器，回到仅热点模式（抽奖不受影响）。'))return;
+  const r=await fetch('/api/wifi',{method:'DELETE'});
+  $('#msg').className = r.ok?'ok':'warn';
+  $('#msg').textContent = r.ok?'已忘记网络，回到仅热点模式':'❌ 操作失败';
+  refresh();
+}
+refresh();
+</script>
+</body>
+</html>

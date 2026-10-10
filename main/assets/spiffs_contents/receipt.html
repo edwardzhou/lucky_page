@@ -1,0 +1,526 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>小票画布编辑</title>
+<style>
+:root{--p:#e8433f;--g:#2ecc71;--bg:#1a1a2e;--card:#16213e;--tx:#eee;--bd:#345;--colw:14px;--lineh:22px}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:system-ui,-apple-system,sans-serif;background:var(--bg);color:var(--tx);padding:14px;font-size:14px}
+nav{display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap}
+nav a{color:#8ab4ff;text-decoration:none;font-size:13px;padding:6px 10px;background:var(--card);border-radius:6px}
+nav a.on{background:var(--p);color:#fff}
+.layout{display:grid;grid-template-columns:1fr 300px;gap:14px;align-items:start}
+@media(max-width:1000px){.layout{grid-template-columns:1fr}}
+.card{background:var(--card);border-radius:12px;padding:12px;margin-bottom:12px}
+h3{font-size:14px;margin-bottom:8px;color:#cfe}
+.toolbar{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px;align-items:center}
+button{background:#334;padding:6px 11px;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:13px}
+button:hover{background:#445}button.pri{background:var(--p)}button.mini{padding:3px 8px;font-size:12px}
+#stage{overflow:auto;padding:10px;background:#0b1226;border-radius:10px}
+#canvas{position:relative;background:#fff;color:#000;border-radius:4px;box-shadow:0 6px 24px #0008;
+       font-family:"Menlo","Consolas","Courier New",monospace;font-size:13px;line-height:var(--lineh)}
+#canvas #grid{position:absolute;inset:0;pointer-events:none;background-image:linear-gradient(to right,#00000012 1px,transparent 1px);background-size:var(--colw) 100%}
+.el{position:absolute;white-space:pre;cursor:grab;border:1px dashed transparent;border-radius:3px;padding:0 1px;user-select:none;overflow:hidden}
+.el:hover{border-color:#7ab8ff}
+.el.sel{border:1px solid var(--p);background:#e8433f14;z-index:5}
+.el.qr,.el.logo{background:#0000000d;border:1px dashed #999;font-size:11px;color:#555;display:flex;align-items:center;justify-content:center}
+.el.bg{background:repeating-linear-gradient(135deg,#0af1,#0af1 8px,transparent 8px,transparent 16px);
+       border:1px dashed #0863;opacity:.85}
+.el.feed{background:repeating-linear-gradient(45deg,#00000008,#00000008 6px,transparent 6px,transparent 12px);color:#888;font-size:11px}
+#ruler{display:flex;font-size:10px;color:#789;font-family:monospace;margin-bottom:4px}
+#ruler span{width:calc(var(--colw)*10);flex:0 0 auto;border-left:1px solid #7893;padding-left:2px}
+.panel label{display:block;font-size:11px;color:#9ab;margin:8px 0 3px}
+input,select,textarea{background:#0a1730;color:var(--tx);border:1px solid var(--bd);border-radius:5px;padding:6px;font-size:13px;width:100%;font-family:inherit}
+textarea{font-family:monospace;min-height:52px;resize:vertical}
+.row{display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-top:6px}
+.psel{max-height:170px;overflow:auto;border:1px solid var(--bd);border-radius:6px;padding:4px;margin-top:6px}
+.psel div{display:flex;justify-content:space-between;gap:6px;padding:3px 5px;border-radius:4px;cursor:pointer;font-size:12px}
+.psel div:hover{background:#243b6b}
+.psel code{color:#8fd}.psel span{color:#789;font-size:11px}
+.hint{font-size:11px;color:#789;line-height:1.6}
+.warn{color:#f39c12;font-size:12px;margin-top:6px}.ok{color:var(--g);font-size:12px;margin-top:6px}
+pre.preview{background:#fff;color:#000;padding:10px;border-radius:8px;font-size:12px;white-space:pre;font-family:monospace;overflow:auto;max-height:280px;display:none}
+</style>
+</head>
+<body>
+<nav>
+<a href="/index.html">抽奖</a><a href="/prizes.html">奖池</a>
+<a href="/receipt.html" class="on">小票画布</a><a href="/logo.html">Logo</a>
+<a href="/calibrate.html">标定</a><a href="/wifi.html">WiFi</a>
+</nav>
+<div id="errbar" style="display:none;background:#e8433f;color:#fff;padding:8px 12px;border-radius:8px;
+     margin-bottom:10px;font-size:13px;word-break:break-all"></div>
+<div class="layout">
+  <div>
+    <div class="card">
+      <h3>画布 —— 拖动元素：左右改列位，上下改顺序</h3>
+      <div class="toolbar">
+        <button onclick="add('line')">＋ 文字行</button>
+        <button onclick="add('separator')">＋ 分隔线</button>
+        <button onclick="add('qr')">＋ 二维码</button>
+        <button onclick="add('logo')">＋ Logo</button>
+        <button onclick="add('feed')">＋ 走纸</button>
+        <span style="color:#9ab;font-size:12px;margin-left:8px">纸宽</span>
+        <select id="paper" onchange="setPaper(this.value)" style="width:auto">
+          <option value="32">58mm（32 列）</option><option value="48">80mm（48 列）</option></select>
+        <button class="mini" onclick="togglePreview()">服务端预览</button>
+        <button class="mini" onclick="loadDefault()">恢复出厂（当前类型）</button>
+        <button class="mini" onclick="resetAll()">全部重置为出厂</button>
+      </div>
+      <div class="toolbar" style="border-top:1px solid #2a3a5a;padding-top:8px">
+        <span style="color:#9ab;font-size:12px">版式类型</span>
+        <select id="mode" onchange="setMode(this.value)" style="width:auto">
+          <option value="flow">纯文字（最快，行数不限）</option>
+          <option value="canvas">画布（整框背景 + 文字叠加）</option>
+          <option value="banner">花边（上下分段，行数不限）</option>
+        </select>
+        <span id="bannerrows" style="display:none">
+          <span style="color:#9ab;font-size:12px">顶部花边</span>
+          <input type="number" id="btop" min="0" max="10" value="2" style="width:56px" onchange="render(0)">
+          <span style="color:#9ab;font-size:12px">行 · 底部花边</span>
+          <input type="number" id="bbot" min="0" max="10" value="3" style="width:56px" onchange="render(0)">
+          <span style="color:#9ab;font-size:12px">行</span>
+        </span>
+        <span id="modehint" class="hint" style="margin-left:8px"></span>
+      </div>
+      <div id="ruler"></div>
+      <div id="stage"><div id="canvas"><div id="grid"></div></div></div>
+      <div class="hint" style="margin-top:8px">
+        虚线框 = 元素边界 · 左右拖动吸附列位 · 上下拖动调整顺序 · 点选后右侧编辑
+      </div>
+    </div>
+    <pre class="preview" id="preview"></pre>
+  </div>
+  <div>
+    <div class="card panel">
+      <h3>元素属性</h3>
+      <div class="hint" id="noSel">在画布上点选一个元素</div>
+      <div id="form" style="display:none"></div>
+    </div>
+    <div class="card panel">
+      <h3>插入参数</h3>
+      <div class="psel" id="params">加载中…</div>
+    </div>
+    <div class="card">
+      <div class="row">
+        <button class="pri" onclick="save()">保存模板</button>
+        <button onclick="render()">刷新预览</button>
+        <button onclick="printTest()">打测试页</button>
+      </div>
+      <div id="msg" class="warn"></div>
+      <div class="hint" style="margin-top:6px">
+        保存前服务端会再校验（列越界/块数/二维码参数等），不过会给出原因且<strong>不保存</strong>。
+      </div>
+    </div>
+  </div>
+</div>
+<script>
+// 自诊断：任何脚本错误都显示在页面上 —— 现场排障不用连电脑看控制台
+var __shownErr={};
+function __showErr(text){
+  var b=document.getElementById('errbar'); if(!b) return;
+  if(__shownErr[text]) return;                 // 同一错误只提示一次，避免刷屏
+  __shownErr[text]=1;
+  b.style.display='block';
+  b.textContent=text+'（同类错误不再重复提示）';
+}
+window.onerror=function(m,src,line,col){ __showErr('⚠ 脚本错误: '+m+' (行 '+line+')'); return false; };
+window.addEventListener('unhandledrejection',function(e){
+  var r=e&&e.reason, msg=(r&&r.message)||String(r||'');
+  // 网络类抖动不吓唬用户（编辑时高频请求本就可能被取消/超时）
+  if(/abort|timed out|Failed to fetch|NetworkError|Load failed/i.test(msg)) return;
+  __showErr('⚠ 请求失败: '+msg);
+});
+const $=s=>document.querySelector((s[0]==='#'||s[0]==='.')?s:('#'+s)); const PAPER=$('#canvas');
+let blocks=[], params=[], sel=-1, paperCols=32, colw=14, lineh=22, mode='flow', logoInfo={w:0,h:0};
+// 接口块 → 画布块（字段名归一化，缺一不可，否则保存时会丢数据）
+function fromServer(b){
+  const o={type:b.type, col:(b.col===undefined?0:b.col),
+           row:(b.row===undefined?-1:b.row),
+           align:b.align||'left', bold:!!b.bold, bg:!!b.bg};
+  if(b.type==='line'){ o.text=b.text||''; o.size=b.size||1; }
+  else if(b.type==='separator'){ o.sep_char=b.char||'-'; }
+  else if(b.type==='qr'){ o.text=b.content||''; o.qr_size=b.size||6; o.qr_ecc=b.ecc||49; }
+  else if(b.type==='feed'){ o.feed_lines=(b.lines===undefined?4:b.lines); }
+  return o;
+}
+const DW=s=>[...String(s===undefined||s===null?'':s)].reduce((w,ch)=>w+(ch.codePointAt(0)<128?1:2),0);
+function wrap(s,box){
+  s=String(s===undefined||s===null?'':s); if(DW(s)<=box) return [s];
+  const out=[]; let cur='',w=0;
+  for(const ch of s){const cw=ch.codePointAt(0)<128?1:2; if(w+cw>box){out.push(cur);cur='';w=0;} cur+=ch;w+=cw;}
+  out.push(cur); return out;
+}
+function pad(s,box,align){
+  const w=DW(s); if(w>=box) return s; const n=box-w;
+  if(align==='right') return ' '.repeat(n)+s;
+  if(align==='center'){const l=Math.floor(n/2);return ' '.repeat(l)+s+' '.repeat(n-l);}
+  return s+' '.repeat(n);
+}
+// 与固件 BuildCanvas 完全同规则：
+//   row >= 0 → 钉在绝对行；row = -1 → 跟随流式游标（自动排布）
+function layout(){
+  let cursor=0; const out=[];
+  for(const b of blocks){
+    const col=Math.max(0,Math.min(paperCols-1,b.col||0)), avail=paperCols-col;
+    let span=1;
+    if(b.type==='line'){
+      const box=b.size===2?Math.floor(avail/2):avail;
+      const lines=Math.max(1,wrap(b.text,Math.max(1,box)).length);
+      // ⚠ 2 倍字号每个字符高 2 行 → 占 2×行数（否则元素框太矮，大字被裁）
+      span=lines*(b.size===2?2:1);
+    }
+    else if(b.type==='qr'){
+      // 二维码实际高度 ≈ 29 模块 × 模块尺寸（与固件 RenderBanner/Hybrid 的预留一致）
+      span=Math.max(1,Math.ceil(29*(b.qr_size||6)/24));
+    }
+    else if(b.type==='logo'){
+      span=Math.max(1,Math.ceil((logoInfo.h||24)/24));   // 图片按实际高度占行
+    }
+    else if(b.type==='feed'){span=Math.max(1,b.feed_lines||0);}
+    const row=(b.row>=0)?b.row:cursor;
+    out.push({row,span,col,avail,auto:b.row<0,bg:!!b.bg});
+    // 背景层不占流式行（文字才能叠在它上面）
+    if(b.bg){ if(row+span>cursor) cursor=row+span; }
+    else { cursor=row+span; }
+  }
+  return {rows:out,total:Math.max(cursor,...out.map(r=>r.row+r.span),1)};
+}
+function paint(){
+  document.documentElement.style.setProperty('--colw',colw+'px');
+  document.documentElement.style.setProperty('--lineh',lineh+'px');
+  PAPER.style.width=(colw*paperCols)+'px';
+  const L=layout();
+  PAPER.style.height=Math.max(lineh,(L.total+1)*lineh)+'px';
+  let ruler=''; for(let i=0;i*10<paperCols;i++) ruler+=`<span>${i*10}</span>`;
+  $('#ruler').innerHTML=ruler;
+  [...PAPER.querySelectorAll('.el')].forEach(e=>e.remove());
+  blocks.forEach((b,i)=>{
+    const pos=L.rows[i], el=document.createElement('div');
+    el.className='el '+b.type+(b.bg?' bg':'')+(i===sel?' sel':'');
+    if(pos.auto) el.title='自动排布（纵向拖动可钉住行位置）';
+    else el.title='固定在行 '+pos.row;
+    el.style.left=(pos.col*colw)+'px'; el.style.top=(pos.row*lineh)+'px';
+    el.style.width=(pos.avail*colw-2)+'px'; el.style.minHeight=(pos.span*lineh)+'px';   // 最小高度：盒子随内容自适应，绝不裁字
+    el.style.lineHeight=((b.size===2?2:1)*lineh)+'px';
+    el.style.fontSize=(13*(b.size===2?2:1))+'px';
+    el.style.fontWeight=b.bold?'700':'400';
+    if(b.type==='line'){
+      const box=b.size===2?Math.floor(pos.avail/2):pos.avail;
+      el.textContent=wrap(b.text,Math.max(1,box)).map(l=>pad(l,Math.max(1,box),b.align||'left')).join('\n');
+    }else if(b.type==='separator'){ el.textContent=(b.sep_char||'-').repeat(Math.max(1,pos.avail)); }
+    else if(b.type==='qr'){ el.textContent='▩ 二维码 '+(b.text||'').slice(0,16)+'  '+(b.qr_size||6)+'号'; }
+    else if(b.type==='logo'){ el.textContent='[Logo]'; }
+    else if(b.type==='feed'){ el.textContent='走纸 '+(b.feed_lines||0)+' 行'; }
+    el.addEventListener('pointerdown',e=>startDrag(e,i,el));
+    PAPER.appendChild(el);
+  });
+}
+let drag=null;
+function startDrag(e,i,el){
+  e.preventDefault(); sel=i; paint(); paintProps();
+  const L0=layout();
+  const curRow=(L0.rows[i]&&L0.rows[i].row)||0;      // 当前生效行（自动块取其流式行）
+  drag={i,x0:e.clientX,y0:e.clientY,col0:blocks[i].col||0,baseRow:curRow,moved:false};
+  const move=ev=>{
+    if(!drag) return; drag.moved=true;
+    const dcol=Math.round((ev.clientX-drag.x0)/colw);
+    blocks[drag.i].col=Math.max(0,Math.min(paperCols-1,drag.col0+dcol));
+    // 纵向拖动 → 钉住绝对行（画布语义：元素停在你放的地方）
+    const drow=Math.round((ev.clientY-drag.y0)/lineh);
+    if(drow!==0){
+      // 基准行在拖动开始时固定，绝不能每帧重算（否则会累加跑飞）
+      blocks[drag.i].row=Math.max(0,Math.min(300,drag.baseRow+drow));
+    }
+    paint();
+  };
+  const up=()=>{ document.removeEventListener('pointermove',move); document.removeEventListener('pointerup',up);
+                 if(drag&&drag.moved){ paintProps(); paint(); render(); } drag=null; };
+  document.addEventListener('pointermove',move); document.addEventListener('pointerup',up);
+}
+const esc=s=>String(s===undefined||s===null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/"/g,'&quot;');
+function paintProps(){
+  const f=$('#form'), b=blocks[sel];
+  if(!b){ $('#noSel').style.display='block'; f.style.display='none'; return; }
+  $('#noSel').style.display='none'; f.style.display='block';
+  const tag={line:'文字行',separator:'分隔线',qr:'二维码',logo:'Logo',feed:'走纸'}[b.type];
+  let h=`<div class="hint" style="margin-bottom:6px">#${sel+1} ${tag}
+    <button class="mini" style="float:right" onclick="del()">删除</button>
+    <button class="mini" style="float:right;margin-right:4px" onclick="dup()">复制</button></div>`;
+  if(b.type==='line'||b.type==='qr'){
+    h+=`<label>${b.type==='line'?'文字（可含 {参数}）':'二维码内容'}</label>
+        <textarea id="pf-text" oninput="setF('text',this.value)">${esc(b.text)}</textarea>`;
+  }
+  if(b.type==='line'){
+    h+=`<label>对齐（剩余宽度内）</label><select onchange="setF('align',this.value)">
+      ${['left','center','right'].map(a=>`<option value="${a}" ${b.align===a?'selected':''}>${{left:'左',center:'中',right:'右'}[a]}</option>`).join('')}</select>
+      <div class="row"><label style="margin:0">字号</label>
+      <select onchange="setF('size',+this.value)" style="width:auto">
+        <option value="1" ${b.size===1?'selected':''}>1 倍</option><option value="2" ${b.size===2?'selected':''}>2 倍</option></select>
+      <label style="margin:0"><input type="checkbox" ${b.bold?'checked':''} onchange="setF('bold',this.checked)" style="width:auto"> 加粗</label></div>`;
+  }
+  if(b.type==='separator'){ h+=`<label>填充字符</label><input maxlength="1" value="${esc(b.sep_char||'-')}" oninput="setF('sep_char',this.value||'-')">`; }
+  if(b.type==='qr'){
+    h+=`<div class="row"><label style="margin:0">模块尺寸</label>
+      <input type="number" min="1" max="16" value="${b.qr_size||6}" style="width:70px" onchange="setF('qr_size',+this.value)">
+      <label style="margin:0">纠错</label><select onchange="setF('qr_ecc',+this.value)" style="width:auto">
+      ${[[48,'L'],[49,'M'],[50,'Q'],[51,'H']].map(([v,n])=>`<option value="${v}" ${b.qr_ecc===v?'selected':''}>${n}</option>`).join('')}</select></div>`;
+  }
+  if(b.type==='feed'){ h+=`<label>走纸行数</label><input type="number" min="0" max="10" value="${b.feed_lines||0}" onchange="setF('feed_lines',+this.value)">`; }
+  if(b.type==='logo'){
+    // 图片元素：背景开关 + 就在这里上传/更换（原来必须切到 Logo 页，体验割裂）
+    h+=`<label>背景图 / Logo</label>
+        <div class="hint" id="logostate">读取中…</div>
+        <canvas id="logothumb" style="display:none;max-width:100%;border:1px solid #345;border-radius:6px;margin-top:6px;background:#fff"></canvas>
+        <div class="row" style="margin-top:6px">
+          <input type="file" id="logofile" accept="image/*" style="font-size:12px">
+        </div>
+        <div class="row">
+          <button class="mini" onclick="uploadLogoInline()">上传/更换</button>
+          <button class="mini" onclick="deleteLogoInline()">删除图</button>
+        </div>
+        <div class="hint">建议宽度 = 纸宽（58mm≈384 点 / 80mm≈576 点），高度上限 672 点（28 行），
+        按宽度等比缩放并转 1-bit。</div>
+        <label style="margin-top:8px"><input type="checkbox" ${b.bg?'checked':''}
+        onchange="setF('bg',this.checked)" style="width:auto"> <b>作为背景层</b>（不占流式行，文字可排在它前后）</label>`;
+    setTimeout(loadLogoInline,0);
+  } else if(b.type==='qr'){
+    h+=`<div class="hint">二维码<b>不能</b>做背景：文字会遮挡码点、降低扫码识别率。</div>`;
+  } else {
+    h+=`<div class="hint">只有 <b>Logo</b> 可以设为背景水印。</div>`;
+  }
+  h+=`<div class="row"><label style="margin:0">列位置 0..${paperCols-1}</label>
+      <input type="number" min="0" max="${paperCols-1}" value="${b.col||0}" style="width:80px" onchange="setF('col',+this.value)">
+      <label style="margin:0">行</label>
+      <input type="number" min="-1" max="300" value="${(b.row===undefined?-1:b.row)}" style="width:80px" onchange="setF('row',+this.value)">
+      <label style="margin:0"><input type="checkbox" ${b.row<0?'checked':''} onchange="setF('row',this.checked?-1:0)" style="width:auto"> 自动</label>
+      </div>
+      <div class="hint">左右拖动改列位置；上下拖动把元素<strong>钉在这一行</strong>。
+      <b>同一行放两个元素</b>（如左店名右日期）就是给它们设相同的「行」、不同的「列」。
+      勾「自动」则回到流式排布。</div>`;
+  f.innerHTML=h;
+}
+function setF(k,v){ if(blocks[sel]){ blocks[sel][k]=v; paint(); render(350); if(k!=='text') paintProps(); } }
+function add(t){ const b={type:t,col:0};
+  if(t==='line'){b.text='新文字行';b.align='left';b.size=1;b.bold=false;}
+  if(t==='separator'){b.sep_char='-';}
+  if(t==='qr'){b.text='{ticket}{check}';b.qr_size=6;b.qr_ecc=49;}
+  if(t==='feed'){b.feed_lines=4;}
+  const at=sel>=0?sel+1:blocks.length; blocks.splice(at,0,b); sel=at; paint(); paintProps(); render(); }
+function del(){ if(sel>=0){ blocks.splice(sel,1); sel=-1; paint(); paintProps(); render(); } }
+function dup(){ if(sel>=0){ blocks.splice(sel+1,0,JSON.parse(JSON.stringify(blocks[sel]))); sel++; paint(); paintProps(); render(); } }
+function setPaper(v){ paperCols=+v; blocks.forEach(b=>{ if((b.col||0)>=paperCols) b.col=paperCols-1; }); paint(); paintProps(); render(); }
+const MODE_HINT = {
+  flow:  '纯文字：全部走打印机文字，帧 ~0.5KB、约 1 秒/张、行数不限，但无图无边框。',
+  canvas:'画布：整票合成位图，文字可与图逐像素叠加、四边完整边框；代价是帧 ~32KB、约 8 秒/张，且行数受图高限制。',
+  banner:'花边：只打上下两段花边，中间走文字 —— 帧 ~3~4KB、约 1.5 秒/张、行数不限；代价是画不出左右竖线。'
+};
+function setMode(m){
+  mode=m;
+  const b=$('#bannerrows'); if(b) b.style.display = (m==='banner')?'inline':'none';
+  const h=$('#modehint'); if(h) h.textContent = MODE_HINT[m]||'';
+  // §7.3d 每种类型各有自己的模板：切换即**加载该类型的模板**
+  loadTemplateForMode(m);
+}
+async function loadTemplateForMode(m){
+  const idx={flow:0,canvas:1,banner:2}[m];
+  try{
+    const t=await fetch('/api/receipt/template?mode='+idx).then(r=>r.json());
+    paperCols=t.paper_cols||32; if($('#paper')) $('#paper').value=paperCols;
+    if(t.banner_top_rows!==undefined && $('#btop')) $('#btop').value=t.banner_top_rows;
+    if(t.banner_bottom_rows!==undefined && $('#bbot')) $('#bbot').value=t.banner_bottom_rows;
+    blocks=(t.blocks||[]).map(fromServer);
+    sel=-1; paint(); paintProps();
+    setMsg('ok','已载入「'+m+'」类型的模板（'+blocks.length+' 个元素）—— 改完点「保存模板」即存回该类型');
+    render(0);
+  }catch(e){ setMsg('warn','载入该类型模板失败'); }
+}
+function payload(extra){
+  const o0={version:3,mode:mode,paper_cols:paperCols};
+  if(mode==='banner'){
+    o0.banner_top_rows=+($('#btop')?$('#btop').value:2);
+    o0.banner_bottom_rows=+($('#bbot')?$('#bbot').value:3);
+  }
+  return Object.assign(o0,{blocks:blocks.map(b=>{
+    const o={type:b.type}; if(b.col) o.col=b.col; if(b.row>=0) o.row=b.row;
+    if(b.bg) o.bg=true;   // ⚠ 必须回传 bg：否则保存一次就丢背景层标记 →
+                          // 图变成普通图片带、文字全排到框外（真机事故）
+    if(b.type==='line'){o.text=b.text;o.align=b.align||'left';o.size=b.size||1;o.bold=!!b.bold;}
+    else if(b.type==='separator'){o.char=b.sep_char||'-';}
+    else if(b.type==='qr'){o.content=b.text;o.size=b.qr_size||6;o.ecc=b.qr_ecc||49;}
+    else if(b.type==='feed'){o.lines=b.feed_lines||0;}
+    return o;})},extra||{});
+}
+// 预览请求：**防抖 + 单飞 + 丢弃过期响应**。
+// 曾经每敲一键发一次请求（实测输入 15 字符 = 16 次请求）→ 把设备 HTTP 打爆，
+// 前端还会弹"请求失败"。现在：停止输入 350ms 后才发，且同一时刻只允许一个在飞。
+let previewTimer=null, previewCtl=null, previewSeq=0;
+function setMsg(kind, text){
+  const m=$('#msg'); if(!m) return;
+  m.className=kind; m.textContent=text;
+}
+function render(delay){
+  if(delay){ clearTimeout(previewTimer); previewTimer=setTimeout(function(){ render(0); }, delay); return; }
+  clearTimeout(previewTimer);
+  const seq=++previewSeq;
+  if(previewCtl){ try{ previewCtl.abort(); }catch(e){} }
+  previewCtl=(typeof AbortController!=='undefined')?new AbortController():null;
+  const opt={method:'POST', body:JSON.stringify(payload())};
+  if(previewCtl) opt.signal=previewCtl.signal;
+  fetch('/api/receipt/template/preview', opt)
+    .then(function(r){ return r.json().then(function(d){ return {ok:r.ok, d:d}; }); })
+    .then(function(res){
+      if(seq!==previewSeq) return;                 // 过期响应丢弃
+      const d=res.d;
+      if(!res.ok){ setMsg('warn','❌ '+(d.error||'预览失败')); return; }
+      $('#preview').textContent=d.text;
+      if(d.unknown_params>0) setMsg('warn','⚠ '+d.unknown_params+' 个未知参数（会原样打印）');
+      else setMsg('ok','✅ '+d.blocks+' 个元素 · '+d.paper_cols+' 列');
+    })
+    .catch(function(e){
+      if(e && e.name==='AbortError') return;       // 被新请求取代，正常
+      if(seq!==previewSeq) return;
+      setMsg('warn','预览刷新失败（点「刷新预览」重试）');
+    });
+}
+function togglePreview(){ const p=$('#preview'); p.style.display=p.style.display==='block'?'none':'block'; }
+async function save(){
+  const bad=blocks.filter(b=>b.type==='qr' && !(b.text||'').trim());
+  if(bad.length){
+    setMsg('warn','❌ 有 '+bad.length+' 个二维码没有内容 —— 二维码块必须填内容（如 {ticket}{check}），否则打印不出码');
+    return;
+  }
+  const r=await fetch('/api/receipt/template',{method:'PUT',body:JSON.stringify(payload())});
+  const d=await r.json();
+  $('#msg').className=r.ok?'ok':'warn';
+  $('#msg').textContent=r.ok?'✅ 已保存并生效':'❌ '+(d.error||'保存失败');
+}
+async function loadDefault(){
+  if(!confirm('恢复出厂版式？当前编辑内容会丢失。'))return;
+  const p=await fetch('/api/receipt/params').then(r=>r.json());
+  const dt=p.default_template; if(!dt)return;
+  paperCols=dt.paper_cols||32; $('#paper').value=paperCols;
+  mode=dt.mode||'flow';
+  if($('#mode')) $('#mode').value=mode;
+  if($('#modehint')) $('#modehint').textContent=MODE_HINT[mode]||'';
+  blocks=(dt.blocks||[]).map(fromServer);
+  sel=-1; paint(); paintProps(); render();
+  $('#msg').textContent='已载入出厂版式，点「保存模板」生效';
+}
+async function resetAll(){
+  if(!confirm('把三种版式（纯文字/画布/花边）全部恢复为出厂预设？\n你自定义的版式会被覆盖。')) return;
+  const r=await fetch('/api/receipt/template/reset',{method:'POST',body:JSON.stringify({mode:-1})});
+  setMsg(r.ok?'ok':'warn', r.ok?'三种版式已全部重置为出厂预设':'❌ 重置失败');
+  if(r.ok) loadTemplateForMode('flow');
+}
+async function printTest(){
+  // 所见即所打：把**当前画布内容**发给打印机（未保存的改动也照打）
+  const r=await fetch('/api/printer/test',{method:'POST',body:JSON.stringify(payload())});
+  const d=await r.json().catch(function(){return {};});
+  setMsg(r.ok?'ok':'warn', r.ok?('已按当前画布内容（'+blocks.length+' 个元素）发出测试页')
+                            :('发送失败：'+(d.error||''))); }
+async function syncClock(){
+  const r=await fetch('/api/time',{method:'POST',body:JSON.stringify({epoch:Math.floor(Date.now()/1000)})});
+  if(!r.ok){ $('#msg').className='warn'; $('#msg').textContent='⚠ 校时失败，{date}/{time} 可能显示占位符'; }
+}
+// ---- Logo 图：就地读取 / 上传 / 删除（把 Logo 页的能力搬进画布）----
+async function loadLogoInline(){
+  const st=$('#logostate'), cv=$('#logothumb');
+  if(!st) return;
+  try{
+    const info=await fetch('/api/logo').then(r=>r.ok?r.json():{exists:false});
+    logoInfo={w:info.width||0,h:info.height||0};
+    if(!info.exists){ logoInfo={w:0,h:0}; st.textContent='当前：未上传（画布上该元素不会打出图）'; if(cv) cv.style.display='none'; paint(); return; }
+    st.textContent=`当前：${info.width}×${info.height} 点（${info.bytes} B，约 ${(info.height/24).toFixed(1)} 行高）`;
+    const rr=await fetch('/api/logo/raw');
+    if(!rr.ok) return;
+    const buf=new Uint8Array(await rr.arrayBuffer());
+    if(buf.length<8 || String.fromCharCode(buf[0],buf[1],buf[2],buf[3])!=='LGO1') return;
+    const w=buf[4]|(buf[5]<<8), h=buf[6]|(buf[7]<<8);
+    // 解码 1-bit 栅格画缩略图（用户能直接看到现在用的是哪张图）
+    if(cv){
+      cv.style.display='block';
+      cv.width=w; cv.height=h;
+      const ctx=cv.getContext('2d');
+      const img=ctx.createImageData(w,h);
+      const bpr=w/8;
+      for(let y=0;y<h;y++)for(let x=0;x<w;x++){
+        const bit=(buf[8+y*bpr+(x>>3)]>>(7-(x&7)))&1;
+        const v=bit?0:255, i=(y*w+x)*4;
+        img.data[i]=img.data[i+1]=img.data[i+2]=v; img.data[i+3]=255;
+      }
+      ctx.putImageData(img,0,0);
+      cv.style.maxHeight='140px';
+    }
+  }catch(e){ st.textContent='当前：读取失败'; }
+}
+async function uploadLogoInline(){
+  const f=$('#logofile');
+  if(!f || !f.files || !f.files[0]){ setMsg('warn','请先选择一张图片文件'); return; }
+  setMsg('ok','正在压缩并上传…');
+  const url=URL.createObjectURL(f.files[0]);
+  const im=new Image();
+  im.onload=async()=>{
+    // 目标宽度 = 纸宽点数（58mm 384 / 80mm 576），上限 576；高度上限 672（设备限制）
+    const maxW=Math.min(576, paperCols*12), maxH=672;
+    let w=maxW, h=Math.round(im.height*maxW/im.width);
+    if(h>maxH){ h=maxH; w=Math.round(im.width*maxH/im.height); }
+    w=Math.max(8, w-(w%8));                       // 宽度必须是 8 的倍数
+    const c=document.createElement('canvas'); c.width=w; c.height=h;
+    const ctx=c.getContext('2d');
+    ctx.fillStyle='#fff'; ctx.fillRect(0,0,w,h);
+    ctx.drawImage(im,0,0,w,h);
+    const data=ctx.getImageData(0,0,w,h).data;
+    const bpr=w/8, out=new Uint8Array(8+bpr*h);
+    out.set([0x4C,0x47,0x4F,0x31],0);
+    out[4]=w&255; out[5]=w>>8; out[6]=h&255; out[7]=h>>8;
+    for(let y=0;y<h;y++)for(let x=0;x<w;x++){
+      if(data[(y*w+x)*4]<128) out[8+y*bpr+(x>>3)]|=0x80>>(x&7);
+    }
+    const r=await fetch('/api/logo',{method:'POST',body:out});
+    const d=await r.json();
+    setMsg(r.ok?'ok':'warn', r.ok?`✅ 图已更新 ${d.width}×${d.height}（${d.bytes} B），重新打一张即可看到`
+                                :'❌ '+(d.error||'上传失败'));
+    URL.revokeObjectURL(url);
+    loadLogoInline();
+    paint(); render(0);
+  };
+  im.onerror=()=>{ setMsg('warn','图片解码失败'); URL.revokeObjectURL(url); };
+  im.src=url;
+}
+async function deleteLogoInline(){
+  if(!confirm('删除当前图片？使用它的版式将不再打出图。')) return;
+  const r=await fetch('/api/logo',{method:'DELETE'});
+  setMsg(r.ok?'ok':'warn', r.ok?'已删除图片':'删除失败');
+  loadLogoInline(); paint(); render(0);
+}
+function insertParam(key){
+  const b=blocks[sel];
+  if(!b||(b.type!=='line'&&b.type!=='qr')){
+    $('#msg').className='warn'; $('#msg').textContent='请先点选一个「文字行」或「二维码」元素'; return; }
+  b.text=(b.text||'')+'{'+key+'}'; paint(); paintProps(); render(0);
+  const ta=$('#pf-text'); if(ta){ ta.focus(); ta.setSelectionRange(ta.value.length,ta.value.length); }
+}
+async function boot(){
+  syncClock();
+  fetch('/api/logo').then(r=>r.ok?r.json():{exists:false}).then(i=>{ if(i&&i.exists){ logoInfo={w:i.width,h:i.height}; paint(); } }).catch(()=>{});
+  const [t,p]=await Promise.all([fetch('/api/receipt/template').then(r=>r.json()),
+                                 fetch('/api/receipt/params').then(r=>r.json())]);
+  paperCols=t.paper_cols||32; $('#paper').value=paperCols;
+  mode=t.mode||'flow';
+  if($('#mode')) $('#mode').value=mode;
+  if($('#bannerrows')) $('#bannerrows').style.display=(mode==='banner')?'inline':'none';
+  if(t.banner_top_rows!==undefined && $('#btop')) $('#btop').value=t.banner_top_rows;
+  if(t.banner_bottom_rows!==undefined && $('#bbot')) $('#bbot').value=t.banner_bottom_rows;
+  if($('#modehint')) $('#modehint').textContent=MODE_HINT[mode]||'';
+  blocks=(t.blocks||[]).map(fromServer);
+  params=p.params||[];
+  $('#params').innerHTML=params.map(x=>`<div onclick="insertParam('${x.key}')"><code>{${x.key}}</code><span>${x.desc}</span></div>`).join('');
+  paint(); render();
+}
+boot();
+</script>
+</body>
+</html>

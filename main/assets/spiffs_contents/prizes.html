@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>奖池配置</title>
+<style>
+:root{--p:#e8433f;--g:#2ecc71;--bg:#1a1a2e;--card:#16213e;--tx:#eee}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:system-ui,sans-serif;background:var(--bg);color:var(--tx);padding:16px;max-width:760px;margin:0 auto;font-size:14px}
+nav{display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap}
+nav a{color:#8ab4ff;text-decoration:none;font-size:13px;padding:6px 10px;background:var(--card);border-radius:6px}
+.card{background:var(--card);border-radius:12px;padding:16px;margin-bottom:14px}
+table{width:100%;border-collapse:collapse;margin:10px 0}
+th,td{padding:6px 4px;text-align:center;border-bottom:1px solid #ffffff18;font-size:13px}
+th{color:#9ab}
+input{width:100%;background:#0d1b3e;color:var(--tx);border:1px solid #345;border-radius:4px;padding:5px;font-size:13px}
+input[type=number]{text-align:center}
+.prob{font-size:11px;color:#7fd}
+.prob.low{color:var(--p);font-weight:bold}
+.dep{color:#777;text-decoration:line-through}
+button{background:#334;padding:8px 18px;color:#fff;border:none;border-radius:6px;cursor:pointer;margin-right:8px}
+button.primary{background:var(--p)}
+.warn{color:var(--p);font-size:12px;margin-top:8px}
+.ok{color:var(--g)}
+label{font-size:13px;color:#9ab;margin-right:8px}
+.row{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin:8px 0}
+</style>
+</head>
+<body>
+<nav><a href="/index.html">抽奖</a><a href="/prizes.html">奖池</a><a href="/receipt.html">小票</a><a href="/logo.html">Logo</a><a href="/calibrate.html">标定</a><a href="/wifi.html">WiFi</a></nav>
+<div class="card">
+  <b>总页数</b>
+  <div class="row">
+    <input type="number" id="pages" min="2" max="128" style="width:80px">
+    <button onclick="savePages()">保存页数</button>
+    <span style="font-size:12px;color:#9ab">（奖池页码不得超出，改小会被拒绝）</span>
+  </div>
+  <div class="row">
+    <label>耗尽策略</label>
+    <select id="policy" style="background:#0d1b3e;color:#eee;padding:5px;border-radius:4px">
+      <option value="0">回退到「谢谢参与」（不冷场）</option>
+      <option value="1">拒绝开奖（宁停不发错）</option>
+    </select>
+  </div>
+</div>
+<div class="card">
+  <b>奖池（概率 = 权重占比，库存扣完自动退出）</b>
+  <table id="tiers">
+    <tr><th>等级</th><th>页码</th><th>权重</th><th>概率</th><th>数量</th><th>剩余</th><th>名称</th><th>副标题</th><th></th></tr>
+  </table>
+  <button onclick="addRow()">＋ 加一级</button>
+  <button class="primary" onclick="save()">保存奖池</button>
+  <button onclick="resetStock()">重置库存</button>
+  <div id="msg" class="warn"></div>
+</div>
+<script>
+const $=s=>document.querySelector((s[0]==='#'||s[0]==='.')?s:('#'+s));
+let pages=30;
+async function load(){
+  const [p,pg]=await Promise.all([fetch('/api/prizes').then(r=>r.json()),fetch('/api/pages').then(r=>r.json())]);
+  pages=p.total_pages;$('#pages').value=pages;$('#policy').value=p.depletion_policy;
+  const t=$('#tiers');
+  t.querySelectorAll('tr:not(:first-child)').forEach(r=>r.remove());
+  p.tiers.forEach(x=>{
+    const tr=document.createElement('tr');
+    if(x.quantity>0&&x.remaining===0)tr.className='dep';
+    const prob=(x.probability*100);
+    tr.innerHTML=`<td>${x.level}</td>
+    <td><input type="number" value="${x.page}" min="0" max="${pages-1}" data-l="${x.level}" data-f="page" style="width:64px"></td>
+    <td><input type="number" value="${x.weight}" min="0" data-l="${x.level}" data-f="weight" style="width:70px"></td>
+    <td><span class="prob ${prob<0.5?'low':''}">${prob.toFixed(1)}%</span></td>
+    <td><input type="number" value="${x.quantity}" data-l="${x.level}" data-f="quantity" style="width:70px" placeholder="-1 不限"></td>
+    <td>${x.quantity<0?'∞':x.remaining}</td>
+    <td><input type="text" value="${x.name}" data-l="${x.level}" data-f="name" style="width:90px"></td>
+    <td><input type="text" value="${x.note}" data-l="${x.level}" data-f="note" style="width:130px"></td>
+    <td><a href="#" onclick="delRow(${x.level});return false" style="color:#e74">删</a></td>`;
+    t.appendChild(tr);
+  });
+}
+function collect(){
+  const tiers=[...document.querySelectorAll('#tiers tr:not(:first-child)')].map((tr,i)=>{
+    const g=f=>tr.querySelector(`[data-f="${f}"]`).value;
+    return{level:i+1,page:+g('page'),weight:+g('weight')||0,
+      quantity:g('quantity')===''?-1:+g('quantity'),
+      remaining:0,name:g('name'),note:g('note')};
+  });
+  // remaining：新配置沿用服务端当前值（按 level 匹配）
+  return tiers;
+}
+function addRow(){
+  const t=$('#tiers');const lv=t.querySelectorAll('tr:not(:first-child)').length+1;
+  const tr=document.createElement('tr');
+  tr.innerHTML=`<td>${lv}</td>
+  <td><input type="number" value="${lv-1}" min="0" max="${pages-1}" data-f="page" style="width:64px"></td>
+  <td><input type="number" value="10" data-f="weight" style="width:70px"></td>
+  <td>-</td>
+  <td><input type="number" value="10" data-f="quantity" style="width:70px"></td>
+  <td>-</td>
+  <td><input type="text" value="新奖项" data-f="name" style="width:90px"></td>
+  <td><input type="text" value="" data-f="note" style="width:130px"></td>
+  <td><a href="#" onclick="this.closest('tr').remove();return false" style="color:#e74">删</a></td>`;
+  t.appendChild(tr);
+}
+function delRow(){event.target.closest('tr').remove()}
+async function save(){
+  const tiers=collect();
+  const old=(await fetch('/api/prizes').then(r=>r.json())).tiers;
+  tiers.forEach(t=>{const m=old.find(o=>o.level===t.level);t.remaining=m?(m.quantity<0?0:m.remaining):t.quantity;});
+  const body=JSON.stringify({version:2,total_pages:pages,depletion_policy:+$('#policy').value,tiers});
+  const r=await fetch('/api/prizes',{method:'PUT',body});
+  const d=await r.json();
+  $('#msg').textContent=r.ok?'✅ 已保存':'❌ '+d.error;
+  if(r.ok)setTimeout(load,600);
+}
+async function savePages(){
+  const v=+$('#pages').value;
+  const r=await fetch('/api/pages',{method:'PUT',body:JSON.stringify({total_pages:v})});
+  const d=await r.json();
+  $('#msg').textContent=r.ok?'✅ 页数已保存（建议到「标定」页核对行程值）':'❌ '+d.error;
+  if(r.ok)pages=v;
+}
+async function resetStock(){
+  if(!confirm('把所有限量级库存恢复到满额？'))return;
+  await fetch('/api/prizes/reset-stock',{method:'POST'});
+  $('#msg').textContent='✅ 库存已重置';load();
+}
+load();
+</script>
+</body>
+</html>

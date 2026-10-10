@@ -1,0 +1,11 @@
+build-esp32s3/
+build/
+output/
+logs/*.log
+sdkconfig
+sdkconfig.old
+dependencies.lock
+managed_components/
+main/version_gen.h
+.DS_Store
+*.log

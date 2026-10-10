@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>行程标定</title>
+<style>
+:root{--p:#e8433f;--g:#2ecc71;--bg:#1a1a2e;--card:#16213e;--tx:#eee}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:system-ui,sans-serif;background:var(--bg);color:var(--tx);padding:16px;max-width:720px;margin:0 auto;font-size:14px}
+nav{display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap}
+nav a{color:#8ab4ff;text-decoration:none;font-size:13px;padding:6px 10px;background:var(--card);border-radius:6px}
+.card{background:var(--card);border-radius:12px;padding:16px;margin-bottom:14px}
+table{width:100%;border-collapse:collapse}
+th,td{padding:4px;text-align:center;border-bottom:1px solid #ffffff18;font-size:13px}
+th{color:#9ab}
+input{background:#0d1b3e;color:var(--tx);border:1px solid #345;border-radius:4px;padding:4px;width:70px;text-align:center;font-size:13px}
+button{background:#334;padding:5px 12px;color:#fff;border:none;border-radius:5px;cursor:pointer;font-size:12px}
+button.go{background:#2980b9}
+button.primary{background:var(--p);padding:9px 20px;font-size:14px;margin-top:10px}
+.note{font-size:12px;color:#9ab;line-height:1.7;margin-top:8px}
+.warn{color:#f39c12;font-size:12px;margin-top:8px}
+</style>
+</head>
+<body>
+<nav><a href="/index.html">抽奖</a><a href="/prizes.html">奖池</a><a href="/receipt.html">小票</a><a href="/logo.html">Logo</a><a href="/calibrate.html">标定</a><a href="/wifi.html">WiFi</a></nav>
+<div class="card">
+  <b>30 页行程标定（D21）</b>
+  <div class="note">
+  ⚠️ <b>30 页可用性判据（施工必做）</b>：逐页点动，若任意两页落到同一格、或落页与目标不符 →
+  该机台<b>不支持 30 页</b>，请到「奖池」页下调总页数（建议 10~16）或更换行程更大的执行器。
+  </div>
+  <table id="tbl"><tr><th>页码</th><th>行程值</th><th>点动验证</th></tr></table>
+  <button class="primary" onclick="save()">保存行程表</button>
+  <span id="msg" class="warn"></span>
+</div>
+<script>
+const $=s=>document.querySelector((s[0]==='#'||s[0]==='.')?s:('#'+s));
+let values=[];
+async function load(){
+  // 行程值不单独出 GET 接口：从映射文件的网页缓存读取——用 /api/pages 拿跨度，
+  // 值本身从 /api/prizes 不含；这里由保存时的服务端回读。初值按跨度公式生成。
+  const pg=await fetch('/api/pages').then(r=>r.json());
+  const n=pg.total_pages,lo=pg.stroke_min_dmx,hi=pg.stroke_max_dmx;
+  values=Array.from({length:n},(_,i)=>n>1?Math.round(lo+i*(hi-lo)/(n-1)):lo);
+  const t=$('#tbl');
+  for(let i=0;i<n;i++){
+    const tr=document.createElement('tr');
+    tr.innerHTML=`<td>P${i+1}</td>
+    <td><input type="number" id="v${i}" value="${values[i]}" min="0" max="255"></td>
+    <td><button class="go" onclick="go(${i})">点动</button></td>`;
+    t.appendChild(tr);
+  }
+}
+async function go(p){
+  const r=await fetch('/api/page/goto',{method:'POST',body:JSON.stringify({page:p})});
+  if(!r.ok){const d=await r.json();$('#msg').textContent='❌ '+(d.error||'状态不允许点动');}
+  else $('#msg').textContent=`已点动到 P${p+1}，请目视确认落页`;
+}
+async function save(){
+  const n=values.length;
+  const vals=Array.from({length:n},(_,i)=>+$('#v'+i).value);
+  const body=JSON.stringify({values:vals,names:vals.map((_,i)=>'P'+(i+1))});
+  const r=await fetch('/api/page-mapping',{method:'PUT',body});
+  const d=await r.json();
+  $('#msg').textContent=r.ok?'✅ 已保存（重启后生效于归零断言）':'❌ '+d.error;
+}
+load();
+</script>
+</body>
+</html>

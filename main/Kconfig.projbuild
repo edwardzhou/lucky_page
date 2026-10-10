@@ -1,0 +1,11 @@
+menu "lucky-page"
+
+    config LUCKY_SKIP_HOMING_ON_BOOT
+        bool "跳过开机归零（仅调试）"
+        default n
+        help
+            跳过 10 秒机械等待以便快速迭代。开启时归零被跳过并打 WARN 日志。
+            ⚠️ 出厂必须关闭（sdkconfig.defaults 显式 CONFIG_LUCKY_SKIP_HOMING_ON_BOOT=n，
+            设计 R10 / D11）。
+
+endmenu

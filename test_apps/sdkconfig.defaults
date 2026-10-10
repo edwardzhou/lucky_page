@@ -1,0 +1,25 @@
+CONFIG_IDF_TARGET_ESP32S3=y
+CONFIG_COMPILER_CXX_EXCEPTIONS=y
+CONFIG_CXX_EXCEPTIONS=y
+CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG=y  # 本板唯一引出串口（USB-Serial-JTAG，D19）
+CONFIG_ESP_CONSOLE_SECONDARY_USB_SERIAL_JTAG=y
+
+# 测试宿主栈：默认 3584B 不够（TestEnv 含 MotionEngine+PrinterService+PrizePool，
+# 栈溢出会把相邻内存砸坏，表现为 TLSF 堆断言 —— 极难归因，故显式加大）
+CONFIG_ESP_MAIN_TASK_STACK_SIZE=16384
+
+# 排障备注：怀疑堆损坏时打开下面两项，会在"破坏发生的那一刻"报出真凶：
+#   CONFIG_HEAP_POISONING_COMPREHENSIVE=y
+#   CONFIG_HEAP_TRACING_STANDALONE=y
+# 本次即靠它从"TLSF 断言"定位到"main 任务栈溢出"。
+
+# 测试宿主分区表：NVS 放尾部空闲区，跑测试绝不写坏主固件的真实配置
+# （原用 IDF 默认表，nvs 与主固件同在 0x9000 → 每次跑测试都抹掉设备配置）
+CONFIG_PARTITION_TABLE_CUSTOM=y
+CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions/test_app.csv"
+
+# 真机是 16MB flash（N16R8）；测试宿主此前按 2MB 配置，导致
+# ① 启动日志告警"Detected size 16384k larger than image header 2048k"
+# ② 无法把测试专用 NVS 放到尾部空闲区（0xC00000 超出 2MB）
+CONFIG_ESPTOOLPY_FLASHSIZE_16MB=y
+CONFIG_ESPTOOLPY_FLASHSIZE="16MB"

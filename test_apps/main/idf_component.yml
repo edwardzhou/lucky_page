@@ -1,0 +1,4 @@
+dependencies:
+  espressif/button: "^4.2.1"
+  # ESP-IDF v6 移除了内置 json 组件，cJSON 改由组件管理器提供（与主工程 main/idf_component.yml 同步）
+  espressif/cjson: "^1.7.19"

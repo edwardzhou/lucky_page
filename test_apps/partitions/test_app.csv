@@ -1,0 +1,14 @@
+# 测试宿主专用分区表（关键：NVS 必须与主固件**不在同一区域**）
+#
+# 事故背景：测试宿主原用 IDF 默认分区表，nvs 恰好在 0x9000 —— 与主固件
+# `partitions/16m.csv` 的 nvs 完全重叠。而测试宿主的 Settings 单例不调用 Load()，
+# 全是默认值，任何测试一 SaveSync() 就把**整表默认值**写进去，
+# 把设备真实配置（WiFi/奖池/票号/文案）静默抹掉。表现为"跑完测试设备配置就没了"。
+#
+# 布局依据：主固件最后一段 replay 结束于 0x980000+0x280000 = 0xC00000，
+# flash 共 16MB(0x1000000) → 0xC00000 之后是主固件不使用的空闲区，安全。
+# 注意：CSV 必须按偏移升序（否则分区表校验报 overlap）。
+# name,      type,  subtype,  offset,    size
+factory,     app,   factory,  0x10000,   0x400000,
+nvs,         data,  nvs,      0xC00000,  0x6000,
+phy_init,    data,  phy,      0xC06000,  0x1000,
