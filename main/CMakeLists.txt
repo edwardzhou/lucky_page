@@ -16,6 +16,7 @@ idf_component_register(
         "application.cc"
         "console_cmd.cc"
         "settings.cc"
+        "network_reset.cc"
         "nvs_saver.cc"
         "page_mapping.cc"
         "page_adjust.cc"

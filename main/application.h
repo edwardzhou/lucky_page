@@ -66,6 +66,7 @@ private:
     std::unique_ptr<PrizePool> pool_;
     std::unique_ptr<LotteryController> controller_;
     std::unique_ptr<Button> module_button_;
+    std::unique_ptr<Button> reset_button_;   // GPIO5 长按 5 秒 → 复位网络配置
 
     // ---- Schedule 机制（mutex + deque + event group） ----
     std::deque<std::function<void()>> schedule_queue_;

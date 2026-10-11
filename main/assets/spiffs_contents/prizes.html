@@ -2,32 +2,19 @@
 <html lang="zh-CN">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <title>奖池配置</title>
 <style>
-:root{--p:#e8433f;--g:#2ecc71;--bg:#1a1a2e;--card:#16213e;--tx:#eee}
-*{box-sizing:border-box;margin:0;padding:0}
-body{font-family:system-ui,sans-serif;background:var(--bg);color:var(--tx);padding:16px;max-width:760px;margin:0 auto;font-size:14px}
-nav{display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap}
-nav a{color:#8ab4ff;text-decoration:none;font-size:13px;padding:6px 10px;background:var(--card);border-radius:6px}
-.card{background:var(--card);border-radius:12px;padding:16px;margin-bottom:14px}
-table{width:100%;border-collapse:collapse;margin:10px 0}
-th,td{padding:6px 4px;text-align:center;border-bottom:1px solid #ffffff18;font-size:13px}
-th{color:#9ab}
-input{width:100%;background:#0d1b3e;color:var(--tx);border:1px solid #345;border-radius:4px;padding:5px;font-size:13px}
-input[type=number]{text-align:center}
+/* 页面特有样式；通用组件（body/.card/table/input/button/.row/.warn…）统一走 app.css 基础层 */
+#tiers input{width:100%}                 /* 表格内输入框撑满单元格 */
 .prob{font-size:11px;color:#7fd}
 .prob.low{color:var(--p);font-weight:bold}
 .dep{color:#777;text-decoration:line-through}
-button{background:#334;padding:8px 18px;color:#fff;border:none;border-radius:6px;cursor:pointer;margin-right:8px}
-button.primary{background:var(--p)}
-.warn{color:var(--p);font-size:12px;margin-top:8px}
-.ok{color:var(--g)}
-label{font-size:13px;color:#9ab;margin-right:8px}
-.row{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin:8px 0}
 </style>
+<!-- 移动端统一样式（安全区/44px 触控/16px 输入框/宽表转卡片）：必须在各页内联样式之后 -->
+<link rel="stylesheet" href="app.css">
 </head>
-<body>
+<body class="has-actbar">
 <nav><a href="/index.html">抽奖</a><a href="/prizes.html">奖池</a><a href="/receipt.html">小票</a><a href="/logo.html">Logo</a><a href="/calibrate.html">标定</a><a href="/wifi.html">WiFi</a></nav>
 <div class="card">
   <b>总页数</b>
@@ -46,12 +33,14 @@ label{font-size:13px;color:#9ab;margin-right:8px}
 </div>
 <div class="card">
   <b>奖池（概率 = 权重占比，库存扣完自动退出）</b>
-  <table id="tiers">
-    <tr><th>等级</th><th>页码</th><th>权重</th><th>概率</th><th>数量</th><th>剩余</th><th>名称</th><th>副标题</th><th></th></tr>
+  <table id="tiers" class="tbl-cards">
+    <tr class="hdr"><th>等级</th><th>页码</th><th>权重</th><th>概率</th><th>数量</th><th>剩余</th><th>名称</th><th>副标题</th><th></th></tr>
   </table>
-  <button onclick="addRow()">＋ 加一级</button>
-  <button class="primary" onclick="save()">保存奖池</button>
-  <button onclick="resetStock()">重置库存</button>
+  <div class="row actbar">
+    <button onclick="addRow()">＋ 加一级</button>
+    <button class="primary" onclick="save()">保存奖池</button>
+    <button onclick="resetStock()">重置库存</button>
+  </div>
   <div id="msg" class="warn"></div>
 </div>
 <script>
@@ -65,16 +54,18 @@ async function load(){
   p.tiers.forEach(x=>{
     const tr=document.createElement('tr');
     if(x.quantity>0&&x.remaining===0)tr.className='dep';
+    tr.dataset.tier=x.level;                       // 卡片化后仍可稳定选中数据行（不含表头）
     const prob=(x.probability*100);
-    tr.innerHTML=`<td>${x.level}</td>
-    <td><input type="number" value="${x.page}" min="0" max="${pages-1}" data-l="${x.level}" data-f="page" style="width:64px"></td>
-    <td><input type="number" value="${x.weight}" min="0" data-l="${x.level}" data-f="weight" style="width:70px"></td>
-    <td><span class="prob ${prob<0.5?'low':''}">${prob.toFixed(1)}%</span></td>
-    <td><input type="number" value="${x.quantity}" data-l="${x.level}" data-f="quantity" style="width:70px" placeholder="-1 不限"></td>
-    <td>${x.quantity<0?'∞':x.remaining}</td>
-    <td><input type="text" value="${x.name}" data-l="${x.level}" data-f="name" style="width:90px"></td>
-    <td><input type="text" value="${x.note}" data-l="${x.level}" data-f="note" style="width:130px"></td>
-    <td><a href="#" onclick="delRow(${x.level});return false" style="color:#e74">删</a></td>`;
+    // data-label：手机端表格转卡片后，每个字段左边显示列名（CSS ::before 读取）
+    tr.innerHTML=`<td data-label="等级">${x.level}</td>
+    <td data-label="页码"><input type="number" value="${x.page}" min="0" max="${pages-1}" data-l="${x.level}" data-f="page" style="width:64px"></td>
+    <td data-label="权重"><input type="number" value="${x.weight}" min="0" data-l="${x.level}" data-f="weight" style="width:70px"></td>
+    <td data-label="概率"><span class="prob ${prob<0.5?'low':''}">${prob.toFixed(1)}%</span></td>
+    <td data-label="数量"><input type="number" value="${x.quantity}" data-l="${x.level}" data-f="quantity" style="width:70px" placeholder="-1 不限"></td>
+    <td data-label="剩余">${x.quantity<0?'∞':x.remaining}</td>
+    <td data-label="名称"><input type="text" value="${x.name}" data-l="${x.level}" data-f="name" style="width:90px"></td>
+    <td data-label="副标题"><input type="text" value="${x.note}" data-l="${x.level}" data-f="note" style="width:130px"></td>
+    <td data-label="操作"><a href="#" onclick="delRow(${x.level});return false" style="color:#e74">删</a></td>`;
     t.appendChild(tr);
   });
 }
@@ -91,15 +82,16 @@ function collect(){
 function addRow(){
   const t=$('#tiers');const lv=t.querySelectorAll('tr:not(:first-child)').length+1;
   const tr=document.createElement('tr');
-  tr.innerHTML=`<td>${lv}</td>
-  <td><input type="number" value="${lv-1}" min="0" max="${pages-1}" data-f="page" style="width:64px"></td>
-  <td><input type="number" value="10" data-f="weight" style="width:70px"></td>
-  <td>-</td>
-  <td><input type="number" value="10" data-f="quantity" style="width:70px"></td>
-  <td>-</td>
-  <td><input type="text" value="新奖项" data-f="name" style="width:90px"></td>
-  <td><input type="text" value="" data-f="note" style="width:130px"></td>
-  <td><a href="#" onclick="this.closest('tr').remove();return false" style="color:#e74">删</a></td>`;
+  tr.dataset.tier=lv;
+  tr.innerHTML=`<td data-label="等级">${lv}</td>
+  <td data-label="页码"><input type="number" value="${lv-1}" min="0" max="${pages-1}" data-f="page" style="width:64px"></td>
+  <td data-label="权重"><input type="number" value="10" data-f="weight" style="width:70px"></td>
+  <td data-label="概率">-</td>
+  <td data-label="数量"><input type="number" value="10" data-f="quantity" style="width:70px"></td>
+  <td data-label="剩余">-</td>
+  <td data-label="名称"><input type="text" value="新奖项" data-f="name" style="width:90px"></td>
+  <td data-label="副标题"><input type="text" value="" data-f="note" style="width:130px"></td>
+  <td data-label="操作"><a href="#" onclick="this.closest('tr').remove();return false" style="color:#e74">删</a></td>`;
   t.appendChild(tr);
 }
 function delRow(){event.target.closest('tr').remove()}
@@ -127,5 +119,6 @@ async function resetStock(){
 }
 load();
 </script>
+<script src="app.js"></script>
 </body>
 </html>

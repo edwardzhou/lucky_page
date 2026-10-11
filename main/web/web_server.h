@@ -37,6 +37,12 @@ private:
     // ---- WiFi STA（设计 §8.1b）----
     static esp_err_t WifiGetHandler(httpd_req_t* req);
     static esp_err_t WifiScanHandler(httpd_req_t* req);
+    // 学习 artnet：异步扫描轮询 / 改热点名 / 静态 IP / 显式断开
+    static esp_err_t WifiScanPollHandler(httpd_req_t* req);
+    static esp_err_t WifiApPutHandler(httpd_req_t* req);
+    static esp_err_t WifiIpPutHandler(httpd_req_t* req);
+    static esp_err_t WifiDisconnectHandler(httpd_req_t* req);
+    static esp_err_t WifiReconnectHandler(httpd_req_t* req);
     static esp_err_t WifiPutHandler(httpd_req_t* req);
     static esp_err_t WifiDeleteHandler(httpd_req_t* req);
 
@@ -48,6 +54,10 @@ private:
     static esp_err_t PagesPutHandler(httpd_req_t* req);
     static esp_err_t PageMappingPutHandler(httpd_req_t* req);
     static esp_err_t PageGotoHandler(httpd_req_t* req);
+    // 标定「页码调整模式」：基础映射 + 每页偏移（参考 page-player 的行程微调）
+    static esp_err_t AdjustGetHandler(httpd_req_t* req);
+    static esp_err_t AdjustPutHandler(httpd_req_t* req);
+    static esp_err_t AdjustResetHandler(httpd_req_t* req);
 
     // ---- 文案/预览 ----
     static esp_err_t ReceiptGetHandler(httpd_req_t* req);

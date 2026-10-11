@@ -101,6 +101,23 @@ public:
     void set_wifi_ssid(const std::string& v) { wifi_ssid_ = v; }
     const std::string& wifi_pass() const { return wifi_pass_; }
     void set_wifi_pass(const std::string& v) { wifi_pass_ = v; }
+    // 联网进阶（学习 artnet）
+    const std::string& ap_ssid() const { return ap_ssid_; }
+    void set_ap_ssid(const std::string& v) { ap_ssid_ = v; }
+    const std::string& ap_pass() const { return ap_pass_; }
+    void set_ap_pass(const std::string& v) { ap_pass_ = v; }
+    int ip_mode() const { return ip_mode_; }                 // 0=DHCP / 1=静态
+    void set_ip_mode(int v) { ip_mode_ = v; }
+    int net_reset_count() const { return net_reset_count_; }
+    void set_net_reset_count(int v) { net_reset_count_ = v; }
+    int64_t net_reset_epoch() const { return net_reset_epoch_; }
+    void set_net_reset_epoch(int64_t v) { net_reset_epoch_ = v; }
+    const std::string& static_ip() const { return static_ip_; }
+    void set_static_ip(const std::string& v) { static_ip_ = v; }
+    const std::string& static_mask() const { return static_mask_; }
+    void set_static_mask(const std::string& v) { static_mask_ = v; }
+    const std::string& static_gw() const { return static_gw_; }
+    void set_static_gw(const std::string& v) { static_gw_ = v; }
     const std::string& receipt_tmpl() const { return receipt_tmpl_; }
     void set_receipt_tmpl(const std::string& v) { receipt_tmpl_ = v; }
     const std::string& tmpl_canvas() const { return tmpl_canvas_; }
@@ -144,6 +161,13 @@ public:
     Settings(const Settings&) = delete;
     Settings& operator=(const Settings&) = delete;
 
+    /// 恢复**网络相关**默认配置（硬件恢复按钮 / 串口 wifi resetnet 用）。
+    ///
+    /// ⚠ 只允许动这几项：ap_ssid / ap_pass / ip_mode / st_ip / st_mask / st_gw /
+    ///   wifi_ssid / wifi_pass / wifi_list。**绝不许碰用户数据**（奖池、三种小票模板、
+    ///   标定偏移、累计开奖数、票号、店铺名…）—— 有单测用哨兵值锁死这条不变量。
+    void ResetNetworkConfig();
+
     /// 字段表全部 key（防复发单测用：断言每个 ≤ NVS_KEY_LEN_MAX-1）
     static std::vector<std::string> DebugAllKeys();
 
@@ -175,6 +199,11 @@ private:
     int serial_daily_ = 0;
     int validity_days_ = 7;
     int64_t last_known_epoch_ = 0;  // 时间基准回退（Task 2.4）
+    // ---- 联网进阶（学习 artnet：AP 名可改 / 静态 IP 可配）----
+    int ip_mode_ = 0;             // 0=DHCP / 1=静态 IP
+    // 网络恢复默认的持久化证据（排查"没人按却被清"这类事故：看次数与时间）
+    int net_reset_count_ = 0;     // 复位次数
+    int64_t net_reset_epoch_ = 0; // 上次复位时间（epoch 秒）
 
     // ---- 字符串字段 ----
     std::string prize_pool_;            // JSON（设计 §7.2）
@@ -182,6 +211,11 @@ private:
     std::string wifi_list_;   // 多网络 JSON（含密码；借鉴 page-player SsidManager）
     std::string wifi_ssid_;   // 当前/最近使用的 SSID（空 = 仅 AP）
     std::string wifi_pass_;   // 明文存 NVS；接口/日志绝不回显
+    std::string ap_ssid_;     // 自定义热点名（空 = 用默认 lucky-page-XXXX）
+    std::string ap_pass_;     // 自定义热点密码（空 = 用默认 12345678；接口绝不回显）
+    std::string static_ip_;   // 静态 IP（ip_mode_==1 时生效）
+    std::string static_mask_; // 子网掩码
+    std::string static_gw_;   // 网关
     std::string ticket_prefix_;
     std::string serial_date_;
     std::string shop_name_ = "幸运翻页机";

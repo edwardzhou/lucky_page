@@ -43,6 +43,7 @@ struct WifiStatusSnapshot {
     char ap_ssid[33] = {};        ///< 本机热点 SSID（UI 必须显示，否则用户"看不到 AP"）
     char ssid[33] = {};           ///< 已配置（STA 要连）的 SSID
     char ip[16] = {};             ///< STA 拿到的 IPv4 点分十进制
+    char netmask[16] = {};        ///< STA 子网掩码（状态行展示用，学习 artnet）
 };
 
 /// 扫描结果条目
@@ -54,6 +55,27 @@ struct WifiScanEntry {
 
 /// 校验凭据。返回空串 = 通过；否则中文原因（Web 400 直接回传）
 std::string ValidateWifiCredentials(const std::string& ssid, const std::string& password);
+
+/// 解析 IPv4 点分十进制（严格：4 段、每段 0..255、无空段/非数字/超长段）。
+/// 返回 false 表示格式非法（*out 不被修改）。
+bool ParseIpv4(const std::string& s, uint32_t* out);
+
+/// 校验自定义热点名（学习 artnet 的"AP 名可改"）。
+/// 规则：1..31 字节（SSID 上限 32，留 1 字节）、无控制字符、无首尾空格。
+/// 返回空串 = 通过；否则中文原因。
+std::string ValidateApSsid(const std::string& ssid);
+
+/// 校验**本机热点密码**（用户可改）。
+/// 规则：8..63 字节（WPA2 要求）、无控制字符。空串不做校验（语义 = 复原默认密码）。
+/// 返回空串 = 通过；否则中文原因。
+std::string ValidateApPassword(const std::string& pass);
+
+/// 校验静态 IP 配置（学习 artnet 的静态 IP/DHCP）。
+/// 规则：三者均为合法 IPv4；掩码必须是**连续的 1**；**网关必须与 IP 同网段**
+/// （配错就失联 —— 现场最常见事故，必须在接口层拦掉）。
+/// 返回空串 = 通过；否则中文原因。
+std::string ValidateStaticIp(const std::string& ip, const std::string& mask,
+                             const std::string& gateway);
 
 /// 模式决策：无 SSID → AP-only；有 SSID → APSTA
 WifiMode WifiDecideMode(const std::string& ssid);

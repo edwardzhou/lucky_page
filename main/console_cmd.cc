@@ -29,6 +29,7 @@
 #include "printer/receipt_render.h"
 #include "printer/receipt_template.h"
 #include "settings.h"
+#include "network_reset.h"
 
 #define TAG "Console"
 
@@ -359,13 +360,119 @@ static void CmdWifi(const char* arg) {
         printf("已忘记网络，回到 AP-only\n");
         return;
     }
+    // wifi disc —— 断开但**保留凭据**（学习 artnet 的「断开连接」）；
+    // 断开后 HTTP 不可达，这条命令就是唯一的救援通道（配合 wifi on 恢复）
+    if (strncmp(arg, "disc", 4) == 0) {
+        std::string err;
+        if (wifi_manager::DisconnectSta(&err)) {
+            printf("已断开路由器（凭据保留）；用 wifi on 可重新连接\n");
+        } else {
+            printf("断开失败: %s\n", err.c_str());
+        }
+        return;
+    }
+    // wifi on —— 用已保存的最高优先网络重连（解除"用户主动断开"状态）
+    if (strncmp(arg, "on", 2) == 0) {
+        std::string err;
+        if (wifi_manager::ReconnectSta(&err)) {
+            printf("已发起重连（用 wifi 查看结果）\n");
+        } else {
+            printf("重连失败: %s\n", err.c_str());
+        }
+        return;
+    }
+    // wifi ascan —— 走**异步扫描**路径（与网页同一条代码：StartAsyncScan + PollScan），
+    // 用于在"设备已连 STA、HTTP 会按白名单拒绝扫描"时也能验证该路径
+    if (strncmp(arg, "ascan", 5) == 0) {
+        std::string err;
+        if (!wifi_manager::StartAsyncScan(&err)) {
+            printf("异步扫描启动失败: %s\n", err.c_str());
+            return;
+        }
+        std::vector<WifiScanEntry> list;
+        bool running = false;
+        for (int i = 0; i < 12; ++i) {
+            vTaskDelay(pdMS_TO_TICKS(500));
+            err.clear();
+            if (!wifi_manager::PollScan(&list, &running, &err)) {
+                printf("轮询失败: %s\n", err.c_str());
+                return;
+            }
+            if (!running) break;
+        }
+        if (running) {
+            printf("扫描超时（仍在进行）\n");
+            return;
+        }
+        if (!err.empty()) {
+            printf("扫描出错: %s\n", err.c_str());
+            return;
+        }
+        printf("异步扫描完成，找到 %zu 个网络:\n", list.size());
+        for (auto& e : list) {
+            printf("  %-32s %4d dBm  %s\n", e.ssid.c_str(), e.rssi, e.secure ? "🔒" : "  ");
+        }
+        return;
+    }
+    // wifi resetnet —— **与硬件恢复按钮同一条代码路径**（按钮长按 5 秒调用它）
+    if (strncmp(arg, "resetnet", 8) == 0) {
+        ResetNetworkConfigToDefault();
+        printf("已恢复网络默认配置（热点名/密码 + 已保存网络 + DHCP）；用户数据未改动\n");
+        return;
+    }
+    // wifi appass <密码> —— 改本机热点密码（空 = 复原默认 12345678）
+    if (strncmp(arg, "appass", 6) == 0) {
+        const char* pass = (arg[6] == ' ') ? arg + 7 : "";
+        std::string err;
+        if (wifi_manager::SetApPassword(pass, &err)) {
+            printf("热点密码已%s；已连接热点的客户端需重连\n", pass[0] ? "更新" : "复原为默认");
+            printf("（当前生效密码: %s）\n", wifi_manager::ApPasswordForConsole().c_str());
+        } else {
+            printf("设置失败: %s\n", err.c_str());
+        }
+        return;
+    }
+    // wifi ap <name> —— 改本机热点名（学习 artnet）
+    if (strncmp(arg, "ap ", 3) == 0) {
+        std::string err;
+        if (wifi_manager::SetApSsid(arg + 3, &err)) {
+            printf("热点名已改为: %s（已连接客户端需重连）\n", arg + 3);
+        } else {
+            printf("改名失败: %s\n", err.c_str());
+        }
+        return;
+    }
+    // wifi dhcp / wifi ip <ip> <mask> <gw> —— 静态 IP 配置（配错也不会丢热点）
+    if (strncmp(arg, "dhcp", 4) == 0) {
+        std::string err;
+        wifi_manager::UseDhcp(&err);
+        printf("已切回 DHCP\n");
+        return;
+    }
+    if (strncmp(arg, "ip ", 3) == 0) {
+        char ip[20] = "", mask[20] = "", gw[20] = "";
+        if (sscanf(arg + 3, "%19s %19s %19s", ip, mask, gw) < 3) {
+            printf("用法: wifi ip <ip> <mask> <gateway>\n");
+            return;
+        }
+        std::string err;
+        if (wifi_manager::SetStaticIp(ip, mask, gw, &err)) {
+            printf("已设静态 IP %s/%s gw %s\n", ip, mask, gw);
+        } else {
+            printf("设置失败: %s\n", err.c_str());
+        }
+        return;
+    }
     // 无参数 = 打印状态
     auto s = wifi_manager::Status();
     printf("WiFi 状态: 模式=%s 已配置=%d STA已连=%d 信号=%d(%u格) IP=%s 时间已同步=%d AP客户端=%u\n",
            s.mode_is_apsta ? "APSTA" : "AP", s.configured, s.sta_connected, (int)s.rssi,
            (unsigned)WifiRssiToBars(s.rssi), s.ip[0] ? s.ip : "-", s.time_synced,
            (unsigned)s.ap_clients);
-    printf("  本机热点: SSID=%s 密码=12345678 IP=192.168.4.1 信道=%u（%s）\n", s.ap_ssid,
+    // 串口是**物理接触**的救援通道：这里打印真实 AP 密码（HTTP 层绝不回显，强制规则 9）
+    printf("  本机热点: SSID=%s 密码=%s%s IP=192.168.4.1 信道=%u（%s）\n", s.ap_ssid,
+           wifi_manager::ApPasswordForConsole().c_str(),
+           Settings::GetInstance().ap_pass().empty() ? "（默认）" : "（自定义）",
            (unsigned)s.ap_channel, s.ap_up ? "广播中" : "未启动");
     auto saved = wifi_manager::SavedNetworks();
     printf("  已存网络(%zu 个, 按优先级):", saved.size());
@@ -374,16 +481,77 @@ static void CmdWifi(const char* arg) {
     }
     printf("%s  后台自动重连\n", saved.empty() ? "（无 → 仅热点模式）" : "");
     printf("  用法: wifi scan | wifi set <ssid> <pass> | wifi off\n");
+    printf("        wifi disc（断开留凭据）| wifi on（重连）| wifi ascan（异步扫描）\n");
+    printf("        wifi ap <名> | wifi appass <密码> | wifi resetnet（= 长按恢复按钮）\n");
+    printf("        wifi ip <ip> <mask> <gw> | wifi dhcp     rstbtn | rstmon [秒]（引脚监视）\n");
+}
+
+// rstmon [秒] —— 监视恢复按钮引脚电平变化（排查"没人按却被触发"）
+// 每 50ms 采样一次，只在电平变化时打印时间戳与电平，结束时给出下降沿计数。
+static void CmdRstMon(const char* arg) {
+    int secs = (arg && arg[0]) ? atoi(arg) : 30;
+    if (secs < 1) secs = 1;
+    if (secs > 600) secs = 600;
+    gpio_config_t io = {};
+    io.pin_bit_mask = (1ULL << RESET_BUTTON_GPIO);
+    io.mode = GPIO_MODE_INPUT;
+    io.pull_up_en = GPIO_PULLUP_ENABLE;
+    gpio_config(&io);
+    printf("监视 GPIO%d %d 秒（每 50ms 采样；只在变化时打印）：\n", (int)RESET_BUTTON_GPIO, secs);
+    int last = gpio_get_level(RESET_BUTTON_GPIO);
+    int lows = 0, changes = 0;
+    int64_t t0 = esp_timer_get_time();
+    printf("  t=0ms 初始电平=%d\n", last);
+    while ((esp_timer_get_time() - t0) / 1000 < (int64_t)secs * 1000) {
+        vTaskDelay(pdMS_TO_TICKS(50));
+        int lv = gpio_get_level(RESET_BUTTON_GPIO);
+        if (lv != last) {
+            ++changes;
+            if (lv == 0) ++lows;
+            printf("  t=%lldms 电平 %d → %d%s\n", (long long)((esp_timer_get_time() - t0) / 1000),
+                   last, lv, lv == 0 ? "（按下/被拉低！）" : "（松开）");
+            last = lv;
+        }
+    }
+    printf("监视结束：变化 %d 次，下降沿 %d 次（0 = 该引脚全程稳定，没人按也没被拉低）\n", changes,
+           lows);
+}
+
+// rstbtn —— 恢复按钮自检：引脚号/有效电平/长按阈值/**当前电平**（上拉未按下应为 1）
+static void CmdRstBtn() {
+    gpio_config_t io = {};
+    io.pin_bit_mask = (1ULL << RESET_BUTTON_GPIO);
+    io.mode = GPIO_MODE_INPUT;
+    io.pull_up_en = GPIO_PULLUP_ENABLE;
+    gpio_config(&io);
+    printf("恢复按钮: GPIO%d active_low 长按 %d ms\n", (int)RESET_BUTTON_GPIO, RESET_BUTTON_LONG_MS);
+    printf("  当前电平=%d（1=未按下/上拉正常，0=正在按下）\n", gpio_get_level(RESET_BUTTON_GPIO));
+    printf("  触发动作: 复位网络配置（等价于 wifi resetnet）\n");
 }
 
 // httptest [path] —— 设备自己向本机 WebServer 发 HTTP 请求（无需外部网络，
 // 用于验证静态页面/captive 跳转/接口是否真的可用；真机排障关键工具）
 static void CmdHttpTest(const char* arg) {
+    // 支持可选方法前缀：httptest [GET|POST|PUT|DELETE] <path>（默认 GET）。
+    // 为什么需要：设备**断开路由器后**只有本机 AP 可达（192.168.4.1），
+    // 这时要验证 POST/PUT 接口（如断开后重连）只能靠设备自测。
+    esp_http_client_method_t method = HTTP_METHOD_GET;
+    const char* method_name = "GET";
     const char* path = (arg && arg[0]) ? arg : "/";
+    if (strncmp(path, "POST ", 5) == 0) {
+        method = HTTP_METHOD_POST; method_name = "POST"; path += 5;
+    } else if (strncmp(path, "PUT ", 4) == 0) {
+        method = HTTP_METHOD_PUT; method_name = "PUT"; path += 4;
+    } else if (strncmp(path, "DELETE ", 7) == 0) {
+        method = HTTP_METHOD_DELETE; method_name = "DELETE"; path += 7;
+    } else if (strncmp(path, "GET ", 4) == 0) {
+        path += 4;
+    }
     char url[128];
     snprintf(url, sizeof(url), "http://192.168.4.1%s", path);
     esp_http_client_config_t cfg = {};
     cfg.url = url;
+    cfg.method = method;
     cfg.timeout_ms = 5000;
     cfg.disable_auto_redirect = true;   // 要看到 302 本身，不自动跟随
     esp_http_client_handle_t cli = esp_http_client_init(&cfg);
@@ -391,15 +559,29 @@ static void CmdHttpTest(const char* arg) {
         printf("HTTP 客户端创建失败\n");
         return;
     }
-    esp_err_t err = esp_http_client_open(cli, 0);
+    // POST/PUT 发一个空 JSON 体（本机接口对空体与 {} 都是合法输入；坏 JSON 才 400）
+    const char* payload = (method == HTTP_METHOD_POST || method == HTTP_METHOD_PUT) ? "{}" : nullptr;
+    esp_err_t err = esp_http_client_open(cli, payload ? (int)strlen(payload) : 0);
     if (err != ESP_OK) {
-        printf("GET %s 连接失败: %s\n", url, esp_err_to_name(err));
+        printf("%s %s 连接失败: %s\n", method_name, url, esp_err_to_name(err));
         esp_http_client_cleanup(cli);
         return;
     }
+    // ⚠ open(cli, len) 只是**声明** Content-Length；body 必须真的 write 出去。
+    // 漏掉这一步时 httpd 会一直等 body，最终回 "HTTP 408 Server closed this connection"
+    // （真机实测踩到）——这不是接口的问题，而是自测工具没发 body。
+    if (payload != nullptr) {
+        int written = esp_http_client_write(cli, payload, strlen(payload));
+        if (written < 0) {
+            printf("发送请求体失败\n");
+            esp_http_client_close(cli);
+            esp_http_client_cleanup(cli);
+            return;
+        }
+    }
     int hdr = esp_http_client_fetch_headers(cli);
     int status = esp_http_client_get_status_code(cli);
-    printf("GET %s → HTTP %d (content_length=%d)\n", url, status, hdr);
+    printf("%s %s → HTTP %d (content_length=%d)\n", method_name, url, status, hdr);
     char* loc = nullptr;   // esp_http_client_get_header 需要 char**
     if (esp_http_client_get_header(cli, "Location", &loc) == ESP_OK && loc != nullptr) {
         printf("  Location: %s\n", loc);
@@ -501,7 +683,7 @@ static void ConsoleTask(void*) {
             printf("draw|ptest|pstatus|pdump|preceipt [win|lose|<页码>]|prizes|gbtest <中文>\n"
                    "pflow off|cts|rts|both  pswap  pprobe  ppins  pscan\n"
                    "ptmpl <json>  pdemo 1|2|3  ptime <epoch>  wifi [scan|set|off]\n"
-                   "httptest [path]  （板内自测 WebServer）\n");
+                   "httptest [GET|POST|PUT|DELETE] [path]  （板内自测 WebServer）\n");
         } else if (strcmp(line, "draw") == 0) CmdDraw();
         else if (strcmp(line, "psample") == 0) CmdPsample();
         else if (strcmp(line, "ptest") == 0) CmdPtest();
@@ -526,6 +708,8 @@ static void ConsoleTask(void*) {
         } else if (strncmp(line, "pdemo ", 6) == 0) CmdPdemo(line + 6);
         else if (strncmp(line, "ptime ", 6) == 0) CmdPtime(line + 6);
         else if (strncmp(line, "wifi", 4) == 0) CmdWifi(line[4] ? line + 5 : "");
+        else if (strncmp(line, "rstbtn", 6) == 0) CmdRstBtn();
+        else if (strncmp(line, "rstmon", 6) == 0) CmdRstMon(line[6] ? line + 7 : "");
         else if (strncmp(line, "httptest", 8) == 0) CmdHttpTest(line[8] ? line + 9 : "");
         else if (strncmp(line, "pbg", 3) == 0) CmdBgTest(line[3] ? line + 4 : "");
         else if (strcmp(line, "prizes") == 0) CmdPrizes();

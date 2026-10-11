@@ -1,0 +1,358 @@
+/* lucky-page 6 页统一样式（单一来源）
+ *
+ * 引入方式：6 个页面都**在内联 <style> 之后**加一行
+ *   <link rel="stylesheet" href="app.css">
+ * 之所以要放在后面：同优先级下后加载的样式表生效，才能覆盖各页内联规则。
+ *
+ * 结构（顺序即优先级意图）：
+ *   §1 设计令牌     —— 色板与尺度，全站唯一真源
+ *   §2 基础层       —— 所有宽度生效：body/.card/h3/button/input/table/.note/.row...
+ *   §3 顶部导航     —— 外观与选中态（"哪个高亮"由 app.js 按 URL 判定）
+ *   §4 底部操作栏   —— 桌面普通一行，手机固定
+ *   §5 手机层       —— @media(max-width:640px)：44px 触控 / 16px 输入框 / 安全区 /
+ *                      底部抽屉 / 宽表转卡片
+ *
+ * 为什么要有 §2：此前每页各写一份 body/.card/button/input ——
+ * PC 实测 6 页的卡片内距是 20/16/12/16/16/14、按钮内距 6 种、内容宽度 480/560/620/720/760/全宽，
+ * 同一个 app 看起来像 6 个（用户反馈"各页风格也不一致"）。现在组件外观只在这里定义，
+ * 页面只保留**页面特有的布局与组件**。
+ *
+ * ⚠ 页面**自己**的 @media 块必须放在该页样式表**末尾**（媒体查询不提升优先级）。
+ */
+
+/* ============ §1 设计令牌（全站唯一真源） ============ */
+:root {
+  /* 色板 */
+  --p: #e8433f;          /* 主题色 / 主操作 */
+  --p-dark: #c0392b;
+  --g: #2ecc71;          /* 成功 */
+  --w: #f39c12;          /* 警告 */
+  --bg: #1a1a2e;         /* 页面底色 */
+  --card: #16213e;       /* 卡片底色 */
+  --field: #0d1b3e;      /* 输入框底色 */
+  --tx: #eee;            /* 正文 */
+  --tx-dim: #9ab;        /* 次要文字（标题/标签） */
+  --tx-mute: #789;       /* 更弱（提示） */
+  --bd: #345;            /* 边框 */
+  --brand: #8ab4ff;      /* 链接/高亮蓝 */
+  --chip: #334;          /* 次要按钮底 */
+  --chip-hover: #445;
+  /* 尺度 */
+  --w-page: 760px;       /* 内容宽度（小票编辑页例外，见 body.wide） */
+  --r-card: 12px;
+  --r-ctl: 8px;
+  --pad-card: 16px;
+  --pad-btn: 8px 16px;
+  --pad-field: 8px 10px;
+  --fs-body: 14px;
+  --fs-h: 15px;
+  --fs-hint: 12px;
+}
+
+/* ============ §2 基础层（桌面与手机共用同一套语义） ============ */
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  font-family: system-ui, -apple-system, sans-serif;
+  background: var(--bg);
+  color: var(--tx);
+  padding: 16px;
+  margin: 0 auto;
+  max-width: var(--w-page);
+  font-size: var(--fs-body);
+  line-height: 1.6;
+}
+/* 唯一的**页面级宽度例外**：小票编辑页需要"画布 + 属性栏"并排，不套 760px。
+ * （WiFi 页曾短暂用过窄列，用户要求"与其他页一致"后已取消 —— 6 页现在统一 760px） */
+body.wide { max-width: none; }
+.card {
+  background: var(--card);
+  border-radius: var(--r-card);
+  padding: var(--pad-card);
+  margin-bottom: 14px;
+}
+h3 { font-size: var(--fs-h); margin-bottom: 10px; color: var(--tx-dim); }
+button {
+  background: var(--chip);
+  color: #fff;
+  border: none;
+  border-radius: var(--r-ctl);
+  padding: var(--pad-btn);
+  font-size: var(--fs-body);
+  font-family: inherit;
+  cursor: pointer;
+}
+button:hover { background: var(--chip-hover); }
+button.primary, button.pri { background: var(--p); }
+button.primary:hover, button.pri:hover { background: var(--p-dark); }
+button.mini { padding: 6px 10px; font-size: var(--fs-hint); }
+button:disabled { background: #2a2a3a; color: #666; cursor: not-allowed; }
+input, select, textarea {
+  background: var(--field);
+  color: var(--tx);
+  border: 1px solid var(--bd);
+  border-radius: var(--r-ctl);
+  padding: var(--pad-field);
+  font-size: var(--fs-body);
+  font-family: inherit;
+}
+input[type=number] { text-align: center; }
+table { width: 100%; border-collapse: collapse; }
+th, td { padding: 6px 4px; text-align: center; border-bottom: 1px solid #ffffff18; font-size: 13px; }
+th { color: var(--tx-dim); font-weight: 600; }
+.note, .hint { font-size: var(--fs-hint); color: var(--tx-mute); line-height: 1.7; margin-top: 8px; }
+.warn { color: var(--w); font-size: var(--fs-hint); margin-top: 8px; }
+.ok { color: var(--g); font-size: var(--fs-hint); margin-top: 8px; }
+.row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin: 8px 0; }
+label { font-size: 13px; color: var(--tx-dim); }
+code { background: #00000030; padding: 1px 4px; border-radius: 4px; }
+
+/* 底部操作栏：桌面端就是普通一行（不固定）；≤640px 时才钉到底部（见 §5） */
+.actbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 10px;
+  flex-wrap: wrap;
+}
+
+/* ---------- §3. 顶部导航（6 页统一，单一来源） ----------
+ * 为什么集中到这里：此前 6 个页面各写一份 nav 样式，结果只有 2 页写了 `nav a.on`
+ * 高亮规则，另外 4 页**当前页完全没有高亮**，且"小票"这条链接出现 3 种文案
+ * （小票 / 小票画布 / 小票模板）—— 用户反馈"顶部 menu 选中风格不一致"。
+ * 现在：外观 + 高亮只在这里定义，"哪一个该高亮"由共享 app.js 按 URL 自动判定。
+ * 本节**不在媒体查询内**：桌面端与手机端用同一套选中风格。
+ */
+nav {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 14px;
+  flex-wrap: wrap;
+}
+nav a {
+  color: var(--brand);
+  text-decoration: none;
+  font-size: 13px;
+  padding: 6px 10px;
+  background: var(--card);
+  border-radius: var(--r-ctl);
+  white-space: nowrap;      /* 标签不折行，保证各页排版一致 */
+}
+nav a.on {
+  background: var(--p);
+  color: #fff;
+  font-weight: 600;
+}
+
+@media (max-width: 640px) {
+  /* ---------- 1. 安全区：底部留白避免被 Home 条/圆角遮挡 ---------- */
+  body {
+    padding-left: max(12px, env(safe-area-inset-left));
+    padding-right: max(12px, env(safe-area-inset-right));
+    padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 16px);
+  }
+  /* 有底部固定操作栏的页面：额外留出栏高，避免内容被永久遮住 */
+  body.has-actbar {
+    padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 92px);
+  }
+
+  /* ---------- 2. 触控目标 ≥44px（Apple HIG / Material 共同建议） ---------- */
+  nav {
+    gap: 6px;
+  }
+  nav a {
+    display: inline-flex;
+    align-items: center;
+    min-height: 44px;
+    padding: 0 12px;
+    font-size: 14px;
+  }
+  button {
+    min-height: 44px;
+    padding: 10px 14px;
+    font-size: 15px;
+  }
+  button.mini {
+    min-height: 40px;
+    padding: 8px 12px;
+  }
+  /* 手指点击不要有 300ms 灰块闪烁 */
+  a, button {
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  /* ---------- 3. 输入框：16px 防 iOS 聚焦缩放 + 大触控高度 ---------- */
+  input, select, textarea {
+    font-size: 16px;
+    min-height: 44px;
+    padding: 10px;
+  }
+  textarea {
+    min-height: 88px;
+  }
+  input[type=checkbox], input[type=radio] {
+    min-height: 0;
+    width: 22px;
+    height: 22px;
+  }
+  input[type=file] {
+    min-height: 44px;
+    padding: 8px;
+  }
+  /* 勾选框所在 label 整行可点（手机上"点不到勾选框"是高频抱怨） */
+  label {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  /* ---------- 4. 底部固定操作栏（把页面里的主操作钉在拇指区） ---------- */
+  .actbar {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 60;
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    margin: 0;
+    border-radius: 0;
+    padding: 10px max(12px, env(safe-area-inset-left))
+             calc(env(safe-area-inset-bottom, 0px) + 10px)
+             max(12px, env(safe-area-inset-right));
+    background: rgba(22, 33, 62, .97);
+    border-top: 1px solid #2a3a5a;
+    box-shadow: 0 -6px 20px #0007;
+  }
+  .actbar .row {
+    flex: 1 1 auto;
+    flex-wrap: nowrap;
+    margin: 0;
+    gap: 8px;
+  }
+  .actbar .row > button {
+    flex: 1 1 0;
+    justify-content: center;
+  }
+  .actbar .hint {
+    display: none;                 /* 说明文字不进固定栏，避免栏太高 */
+  }
+  .actbar .msg {
+    position: absolute;
+    left: max(12px, env(safe-area-inset-left));
+    right: max(12px, env(safe-area-inset-right));
+    top: -20px;
+    font-size: 12px;
+    text-align: center;
+    margin: 0;
+    pointer-events: none;
+  }
+
+  /* ---------- 5. 底部抽屉（手机端属性面板形态） ---------- */
+  .sheet {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 70;
+    max-height: 62vh;
+    overflow: auto;
+    overscroll-behavior: contain;   /* 抽屉内滚动到底不要带动整页 */
+    -webkit-overflow-scrolling: touch;
+    background: var(--card, #16213e);
+    border-radius: 16px 16px 0 0;
+    border-top: 1px solid #2a3a5a;
+    box-shadow: 0 -10px 30px #0009;
+    padding: 4px 12px calc(env(safe-area-inset-bottom, 0px) + 14px);
+    transform: translateY(115%);
+    transition: transform .22s ease;
+    will-change: transform;
+  }
+  .sheet.open {
+    transform: none;
+  }
+  .sheet .handle {
+    width: 44px;
+    height: 4px;
+    border-radius: 3px;
+    background: #456;
+    margin: 8px auto 10px;
+  }
+  .sheet .sheet-close {
+    position: absolute;
+    right: 10px;
+    top: 10px;
+  }
+  .sheet .card {
+    background: transparent;
+    padding: 6px 0;
+    margin: 0 0 8px;
+  }
+  /* 抽屉里有固定栏时抬高，避免遮住主操作 */
+  .sheet.above-actbar {
+    bottom: calc(env(safe-area-inset-bottom, 0px) + 66px);
+    border-radius: 16px 16px 0 0;
+  }
+
+  /* ---------- 6. 宽表转卡片（手机上 9 列表格必然溢出） ---------- */
+  .tbl-cards .hdr {
+    display: none;                 /* 表头行隐藏，列名改由 td::before 呈现 */
+  }
+  .tbl-cards tr {
+    display: block;
+    border: 1px solid #ffffff1a;
+    border-radius: 10px;
+    padding: 8px 10px;
+    margin-bottom: 10px;
+    background: #0d1b3e;
+  }
+  .tbl-cards td {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    border: none;
+    padding: 4px 0;
+    text-align: left;
+    font-size: 13px;
+  }
+  .tbl-cards td::before {
+    content: attr(data-label);
+    flex: 0 0 62px;
+    color: #9ab;
+    font-size: 12px;
+  }
+  .tbl-cards td input {
+    width: 100% !important;        /* 覆盖内联 style="width:64px" 等固定宽度 */
+    flex: 1 1 auto;
+  }
+  /* 卡片里的操作链接（如「删」）在手机上要够大好点 */
+  .tbl-cards td a {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 44px;
+    min-width: 64px;
+    padding: 0 12px;
+    background: #3a2028;
+    border-radius: 8px;
+    text-decoration: none;
+  }
+
+  /* 插入参数列表行：原来 padding 3px（约 24px 高），手机上极易点错 */
+  .psel div {
+    min-height: 44px;
+    display: flex;
+    align-items: center;
+    padding: 6px 8px;
+    font-size: 14px;
+  }
+
+  /* ---------- 7. 细节 ---------- */
+  pre.preview {
+    max-height: 44vh;
+    font-size: 12px;
+  }
+  .hint {
+    line-height: 1.7;
+  }
+}

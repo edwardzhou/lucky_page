@@ -9,3 +9,4 @@ managed_components/
 main/version_gen.h
 .DS_Store
 *.log
+__pycache__/

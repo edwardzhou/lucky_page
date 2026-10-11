@@ -68,6 +68,8 @@ static const std::vector<IntField>& IntFields() {
         {"auto_return_ms",   &Settings::auto_return_ms_,      1500},
         {"serial_daily",     &Settings::serial_daily_,        0},
         {"validity_days",    &Settings::validity_days_,       7},
+        {"ip_mode",          &Settings::ip_mode_,          0},   // 0=DHCP / 1=静态 IP（学习 artnet）
+        {"net_rst_cnt",    &Settings::net_reset_count_,  0},
     };
     return kFields;
 }
@@ -75,6 +77,7 @@ static const std::vector<IntField>& IntFields() {
 static const std::vector<I64Field>& I64Fields() {
     static const std::vector<I64Field> kFields = {
         {"last_known_ep", &Settings::last_known_epoch_, 0},   // ≤15 字符（NVS_KEY_LEN_MAX，真机踩坑）
+        {"net_rst_epoch",  &Settings::net_reset_epoch_,  0},
     };
     return kFields;
 }
@@ -86,6 +89,11 @@ static const std::vector<StrField>& StrFields() {
         {"wifi_list",        &Settings::wifi_list_,          ""},
         {"wifi_ssid",        &Settings::wifi_ssid_,          ""},
         {"wifi_pass",        &Settings::wifi_pass_,          ""},
+        {"ap_ssid",          &Settings::ap_ssid_,          ""},   // 自定义热点名
+        {"ap_pass",          &Settings::ap_pass_,          ""},   // 自定义热点密码（键 ≤15）
+        {"st_ip",            &Settings::static_ip_,        ""},   // 静态 IP（键 ≤15）
+        {"st_mask",          &Settings::static_mask_,      ""},
+        {"st_gw",            &Settings::static_gw_,        ""},
         {"ticket_prefix",     &Settings::ticket_prefix_,     ""},
         {"serial_date",       &Settings::serial_date_,       ""},
         {"shop_name",         &Settings::shop_name_,         "幸运翻页机"},
@@ -252,6 +260,22 @@ std::vector<std::string> Settings::DebugAllKeys() {
     for (const auto& f : SettingsFieldAccess::I64Fields()) keys.push_back(f.key);
     for (const auto& f : SettingsFieldAccess::StrFields()) keys.push_back(f.key);
     return keys;
+}
+
+void Settings::ResetNetworkConfig() {
+    // 只回"网络"这一组：热点名/密码 + 已保存的 STA 网络与凭据 + IP 模式。
+    // 用户在页面上做过的任何内容（奖池/模板/标定/计数）都必须原封不动。
+    ap_ssid_.clear();        // → 默认 lucky-page-XXXX
+    ap_pass_.clear();        // → 默认 12345678
+    ip_mode_ = 0;            // → DHCP
+    static_ip_.clear();
+    static_mask_.clear();
+    static_gw_.clear();
+    wifi_ssid_.clear();      // 忘记当前网络
+    wifi_pass_.clear();
+    wifi_list_.clear();      // 忘记全部已保存网络
+    SaveSync();
+    ESP_LOGW("Settings", "网络配置已恢复默认（热点名/密码 + 已保存网络 + DHCP）；用户数据未改动");
 }
 
 void Settings::RequestSave() {

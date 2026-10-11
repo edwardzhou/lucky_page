@@ -31,6 +31,14 @@
 
 static constexpr int kSyncTimeoutMs = 2000;
 
+// URI handler 上限。
+// ⚠ 真机事故（2026-10-10）：ESP-IDF 的 httpd 在注册数超过 max_uri_handlers 时是
+// **静默失败**（只打一条 ESP_LOGE），表现为"最后注册的通配静态路由 `/*` 没生效 →
+// 所有页面 404 Nothing matches the given URI"，而 API 全部正常 —— 极易误判成 SPIFFS 坏了。
+// 本次因新增 3 条 /api/adjust 路由，把 31+2=33 顶破了原来是 32 的上限。
+// 对策：① 留足余量；② 编译期 static_assert（见 Start() 内），让超限在编译期就暴露。
+static constexpr size_t kMaxUriHandlers = 40;
+
 // MainSync：把任务投到主线程并同步取回 string 结果（D23"重读"路径）
 // 单层类型擦除，勿嵌套泛型 lambda（曾把此文件写到 79 万行）
 static std::string MainSync(std::function<std::string()> fn, int timeout_ms = kSyncTimeoutMs) {
@@ -405,6 +413,125 @@ esp_err_t WebServer::PageGotoHandler(httpd_req_t* req) {
     return SendJson(req, "{\"status\":\"started\"}");
 }
 
+// ==================== 行程偏移（标定「页码调整模式」）====================
+// 参考 page-player 的行程微调：基础映射（PageMapping）不动，逐页叠加 int8 偏移
+// （PageAdjust），实际 DMX 值 = clamp(base + offset, 0, 255)。
+// 点动（DirectDrive）已叠加偏移，故"微调 → 点动 → 眼睛确认"构成闭环。
+
+esp_err_t WebServer::AdjustGetHandler(httpd_req_t* req) {
+    auto json = MainSync([]() -> std::string {
+        auto& s = Settings::GetInstance();
+        auto& adj = PageAdjust::GetInstance();
+        const auto& mapping = PageMapping::GetInstance().GetMapping();
+        cJSON* root = cJSON_CreateObject();
+        cJSON_AddNumberToObject(root, "cell_count", 1);   // 单机模式固定 1 路
+        cJSON_AddNumberToObject(root, "total_pages", s.total_pages());
+        // offsets 保持二维形状（与 page-player 一致，便于将来多机扩展）
+        cJSON* offs = cJSON_AddArrayToObject(root, "offsets");
+        cJSON* cell0 = cJSON_CreateArray();
+        for (int i = 0; i < s.total_pages(); ++i) {
+            cJSON_AddItemToArray(cell0, cJSON_CreateNumber(adj.GetOffset(0, i)));
+        }
+        cJSON_AddItemToArray(offs, cell0);
+        cJSON* map = cJSON_AddArrayToObject(root, "mapping");
+        for (int i = 0; i < s.total_pages() && i < (int)mapping.size(); ++i) {
+            cJSON_AddItemToArray(map, cJSON_CreateNumber(mapping[i]));
+        }
+        return JsonDump(root);
+    });
+    if (json.empty()) return SendError(req, "主线程繁忙", 503);
+    return SendJson(req, json);
+}
+
+esp_err_t WebServer::AdjustPutHandler(httpd_req_t* req) {
+    std::string body = ReadBody(req);
+    cJSON* root = cJSON_Parse(body.c_str());
+    if (root == nullptr) return SendError(req, "JSON 解析失败");
+
+    cJSON* jcell = cJSON_GetObjectItem(root, "cell");
+    cJSON* jpage = cJSON_GetObjectItem(root, "page");
+    cJSON* joff = cJSON_GetObjectItem(root, "offset");
+    if (!cJSON_IsNumber(jpage) || !cJSON_IsNumber(joff)) {
+        cJSON_Delete(root);
+        return SendError(req, "缺少 page 或 offset");
+    }
+    const int cell = cJSON_IsNumber(jcell) ? jcell->valueint : 0;
+    const int page = jpage->valueint;
+    const int offset = joff->valueint;
+    cJSON_Delete(root);
+
+    // ⚠ 必须显式校验：PageAdjust::SetOffset 对越界是**静默忽略**，
+    // 不校验的话前端会以为改成功了其实没改（本项目踩过的同类坑）
+    if (cell != 0) return SendError(req, "cell 必须为 0（单机模式）");
+    auto& settings = Settings::GetInstance();
+    const int pages = settings.total_pages();
+    if (page < 0 || page >= pages) return SendError(req, "page 越界（0..total_pages-1）");
+    if (offset < -128 || offset > 127) return SendError(req, "offset 必须在 -128..127");
+
+    struct Ctx {
+        int base = 0;
+        int value = 0;
+        bool ok = false;
+    };
+    auto ctx = std::make_shared<Ctx>();
+    MainSync([ctx, page, offset]() -> std::string {
+        PageAdjust::GetInstance().SetOffset(0, page, (int8_t)offset);
+        const auto& mapping = PageMapping::GetInstance().GetMapping();
+        ctx->base = (page < (int)mapping.size()) ? mapping[page] : 0;
+        ctx->value = PageAdjust::GetInstance().GetAdjustedValue(0, page);
+        ctx->ok = true;
+        return "ok";
+    });
+    if (!ctx->ok) return SendError(req, "主线程繁忙", 503);
+
+    cJSON* out = cJSON_CreateObject();
+    cJSON_AddBoolToObject(out, "ok", true);
+    cJSON_AddNumberToObject(out, "cell", 0);
+    cJSON_AddNumberToObject(out, "page", page);
+    cJSON_AddNumberToObject(out, "offset", offset);
+    cJSON_AddNumberToObject(out, "base", ctx->base);
+    cJSON_AddNumberToObject(out, "value", ctx->value);
+    return SendJson(req, JsonDump(out));
+}
+
+esp_err_t WebServer::AdjustResetHandler(httpd_req_t* req) {
+    std::string body = ReadBody(req);
+    cJSON* root = cJSON_Parse(body.c_str());
+    if (root == nullptr) return SendError(req, "JSON 解析失败");
+
+    cJSON* jcell = cJSON_GetObjectItem(root, "cell");
+    cJSON* jpage = cJSON_GetObjectItem(root, "page");
+    const int cell = cJSON_IsNumber(jcell) ? jcell->valueint : 0;
+    const int page = cJSON_IsNumber(jpage) ? jpage->valueint : -1;   // 缺省 = 清零全部
+    cJSON_Delete(root);
+
+    if (cell != 0 && cell != -1) return SendError(req, "cell 必须为 0 或 -1");
+    auto& settings = Settings::GetInstance();
+    const int pages = settings.total_pages();
+    if (page != -1 && (page < 0 || page >= pages)) {
+        return SendError(req, "page 越界（-1=全部，0..total_pages-1）");
+    }
+
+    struct Ctx {
+        int cleared = 0;
+    };
+    auto ctx = std::make_shared<Ctx>();
+    MainSync([ctx, page, pages]() -> std::string {
+        if (page == -1) {
+            PageAdjust::GetInstance().ResetAll();
+            ctx->cleared = pages;
+        } else {
+            PageAdjust::GetInstance().SetOffset(0, page, 0);
+            ctx->cleared = 1;
+        }
+        return "ok";
+    });
+    cJSON* out = cJSON_CreateObject();
+    cJSON_AddBoolToObject(out, "ok", true);
+    cJSON_AddNumberToObject(out, "cleared", ctx->cleared);
+    return SendJson(req, JsonDump(out));
+}
+
 // ============================ 文案 / 预览 ============================
 esp_err_t WebServer::ReceiptGetHandler(httpd_req_t* req) {
     auto json = MainSync([]() -> std::string {
@@ -518,16 +645,185 @@ esp_err_t WebServer::WifiGetHandler(httpd_req_t* req) {
     auto snap = wifi_manager::Status();
     std::string json = WifiStatusToJson(snap);
     json.pop_back();   // 去掉末尾 '}'
-    json += ",\"saved\":" + WifiSavedListToJson(wifi_manager::SavedNetworks()) + "}";
+    json += ",\"saved\":" + WifiSavedListToJson(wifi_manager::SavedNetworks());
+    // 学习 artnet 的进阶项：IP 模式与静态配置（展示用，非机密）
+    auto& s = Settings::GetInstance();
+    cJSON* extra = cJSON_CreateObject();
+    cJSON_AddNumberToObject(extra, "ip_mode", s.ip_mode());
+    cJSON_AddStringToObject(extra, "static_ip", s.static_ip().c_str());
+    cJSON_AddStringToObject(extra, "static_mask", s.static_mask().c_str());
+    cJSON_AddStringToObject(extra, "static_gw", s.static_gw().c_str());
+    cJSON_AddBoolToObject(extra, "ap_ssid_custom", !s.ap_ssid().empty());
+    // 密码绝不回显：只告知"是否自定义"（强制规则 9）
+    cJSON_AddBoolToObject(extra, "ap_pass_custom", !s.ap_pass().empty());
+    cJSON_AddBoolToObject(extra, "user_disconnected", wifi_manager::IsUserDisconnected());
+    // 网络复位证据（次数 + 时间），便于排查"没人按却被复位"
+    cJSON_AddNumberToObject(extra, "net_reset_count", s.net_reset_count());
+    cJSON_AddNumberToObject(extra, "net_reset_epoch", (double)s.net_reset_epoch());
+    char* extra_str = cJSON_PrintUnformatted(extra);
+    cJSON_Delete(extra);
+    if (extra_str != nullptr) {
+        std::string tail(extra_str);
+        free(extra_str);
+        if (tail.size() > 1) json += "," + tail.substr(1, tail.size() - 2);
+    }
+    json += "}";
     return SendJson(req, json);
 }
 
 esp_err_t WebServer::WifiScanHandler(httpd_req_t* req) {
-    // 扫描阻塞 2~4s：放在本 HTTP 任务里做，不占主线程（主线程要管抽奖）
-    std::vector<WifiScanEntry> list;
+    // 学习 artnet：**改为异步启动**（原来阻塞 2~4s，手机上像卡死）。
+    // 结果由 GET /api/wifi/scan 轮询取。
     std::string err;
-    if (!wifi_manager::Scan(&list, &err)) return SendError(req, err, 503);
-    return SendJson(req, WifiScanListToJson(list));
+    if (!wifi_manager::StartAsyncScan(&err)) return SendError(req, err, 409);
+    return SendJson(req, "{\"status\":\"started\"}");
+}
+
+esp_err_t WebServer::WifiScanPollHandler(httpd_req_t* req) {
+    std::vector<WifiScanEntry> list;
+    bool running = false;
+    std::string err;
+    if (!wifi_manager::PollScan(&list, &running, &err)) {
+        // 还没发起过扫描（界面不会走到这里，防御性返回 200 + idle 便于前端统一处理）
+        return SendJson(req, "{\"running\":false,\"done\":false}");
+    }
+    if (running) return SendJson(req, "{\"running\":true,\"done\":false}");
+    cJSON* root = cJSON_CreateObject();
+    cJSON_AddBoolToObject(root, "running", false);
+    cJSON_AddBoolToObject(root, "done", true);
+    cJSON* aps = cJSON_AddArrayToObject(root, "aps");
+    for (const auto& e : list) {
+        cJSON* o = cJSON_CreateObject();
+        cJSON_AddStringToObject(o, "ssid", e.ssid.c_str());
+        cJSON_AddNumberToObject(o, "rssi", e.rssi);
+        cJSON_AddBoolToObject(o, "secure", e.secure);
+        cJSON_AddNumberToObject(o, "bars", WifiRssiToBars(e.rssi));
+        cJSON_AddItemToArray(aps, o);
+    }
+    cJSON_AddStringToObject(root, "error", err.c_str());
+    return SendJson(req, JsonDump(root));
+}
+
+// PUT /api/wifi/ap —— 改热点名 / 热点密码（学习 artnet 的"AP 可改" + 用户要求改密码）
+// 请求体支持 ap_ssid 和/或 ap_pass，至少给一个；各自独立校验（任一失败 400 带原因）。
+// 空串语义：ap_ssid:"" = 复原默认热点名；ap_pass:"" = **复原默认密码**（不是设成开放网络）。
+esp_err_t WebServer::WifiApPutHandler(httpd_req_t* req) {
+    std::string body = ReadBody(req);
+    cJSON* root = cJSON_Parse(body.c_str());
+    if (root == nullptr) return SendError(req, "JSON 解析失败");
+    cJSON* jssid = cJSON_GetObjectItem(root, "ap_ssid");
+    cJSON* jpass = cJSON_GetObjectItem(root, "ap_pass");
+    const bool has_ssid = cJSON_IsString(jssid) && jssid->valuestring != nullptr;
+    const bool has_pass = cJSON_IsString(jpass) && jpass->valuestring != nullptr;
+    std::string ap_ssid = has_ssid ? jssid->valuestring : "";
+    std::string ap_pass = has_pass ? jpass->valuestring : "";
+    cJSON_Delete(root);
+    if (!has_ssid && !has_pass) return SendError(req, "缺少 ap_ssid 或 ap_pass");
+
+    struct Ctx {
+        bool ok = false;
+        std::string err;
+    };
+    auto ctx = std::make_shared<Ctx>();
+    MainSync([ctx, has_ssid, has_pass, ap_ssid, ap_pass]() -> std::string {
+        // ⚠ 不能写成 "先 ssid 再 if(ctx->ok) pass"：只传 ap_pass 时 ok 初值为 false，
+        // 密码那步会被跳过并整体判失败（真机测试抓到过）。这里的语义是"全部成功才 ok"。
+        if (has_ssid && !wifi_manager::SetApSsid(ap_ssid, &ctx->err)) return "ok";
+        if (has_pass && !wifi_manager::SetApPassword(ap_pass, &ctx->err)) return "ok";
+        ctx->ok = true;
+        return "ok";
+    });
+    if (!ctx->ok) return SendError(req, ctx->err.empty() ? "热点设置失败" : ctx->err);
+    cJSON* out = cJSON_CreateObject();
+    cJSON_AddBoolToObject(out, "ok", true);
+    // ⚠ 绝不回显密码本身（只回"是否自定义"）
+    if (has_ssid) cJSON_AddStringToObject(out, "ap_ssid", ap_ssid.c_str());
+    if (has_pass) cJSON_AddBoolToObject(out, "ap_pass_custom", !ap_pass.empty());
+    return SendJson(req, JsonDump(out));
+}
+
+// PUT /api/wifi/ip —— 切静态 IP / DHCP（学习 artnet 的静态 IP 配置）
+esp_err_t WebServer::WifiIpPutHandler(httpd_req_t* req) {
+    std::string body = ReadBody(req);
+    cJSON* root = cJSON_Parse(body.c_str());
+    if (root == nullptr) return SendError(req, "JSON 解析失败");
+    cJSON* jdhcp = cJSON_GetObjectItem(root, "dhcp");
+    const bool dhcp = cJSON_IsTrue(jdhcp);
+    cJSON* jip = cJSON_GetObjectItem(root, "ip");
+    cJSON* jmask = cJSON_GetObjectItem(root, "netmask");
+    cJSON* jgw = cJSON_GetObjectItem(root, "gateway");
+    std::string ip = cJSON_IsString(jip) && jip->valuestring ? jip->valuestring : "";
+    std::string mask = cJSON_IsString(jmask) && jmask->valuestring ? jmask->valuestring : "";
+    std::string gw = cJSON_IsString(jgw) && jgw->valuestring ? jgw->valuestring : "";
+    cJSON_Delete(root);
+
+    if (!dhcp && (ip.empty() || mask.empty() || gw.empty())) {
+        return SendError(req, "静态 IP 需要 ip / netmask / gateway 三个字段（或 dhcp:true）");
+    }
+    struct Ctx {
+        bool ok = false;
+        std::string err;
+    };
+    auto ctx = std::make_shared<Ctx>();
+    MainSync([ctx, dhcp, ip, mask, gw]() -> std::string {
+        ctx->ok = dhcp ? wifi_manager::UseDhcp(&ctx->err)
+                       : wifi_manager::SetStaticIp(ip, mask, gw, &ctx->err);
+        return "ok";
+    });
+    if (!ctx->ok) return SendError(req, ctx->err.empty() ? "设置失败" : ctx->err);
+    cJSON* out = cJSON_CreateObject();
+    cJSON_AddBoolToObject(out, "ok", true);
+    cJSON_AddNumberToObject(out, "ip_mode", dhcp ? 0 : 1);
+    cJSON_AddStringToObject(out, "ip", dhcp ? "" : ip.c_str());
+    cJSON_AddStringToObject(out, "netmask", dhcp ? "" : mask.c_str());
+    cJSON_AddStringToObject(out, "gateway", dhcp ? "" : gw.c_str());
+    return SendJson(req, JsonDump(out));
+}
+
+// POST /api/wifi/reconnect —— 用**已保存凭据**重连（断开后界面能自己恢复，
+// 否则密码不回显 → 前端无法重连 → "断开"成了单向门，只能靠串口救）
+esp_err_t WebServer::WifiReconnectHandler(httpd_req_t* req) {
+    std::string body = ReadBody(req);
+    if (!body.empty()) {
+        cJSON* root = cJSON_Parse(body.c_str());
+        if (root == nullptr) return SendError(req, "JSON 解析失败");
+        cJSON_Delete(root);
+    }
+    struct Ctx {
+        bool ok = false;
+        std::string err;
+    };
+    auto ctx = std::make_shared<Ctx>();
+    MainSync([ctx]() -> std::string {
+        ctx->ok = wifi_manager::ReconnectSta(&ctx->err);
+        return "ok";
+    });
+    if (!ctx->ok) return SendError(req, ctx->err.empty() ? "重连失败" : ctx->err, 400);
+    return SendJson(req, "{\"status\":\"connecting\"}");
+}
+
+// POST /api/wifi/disconnect —— 断开 STA 但保留凭据（学习 artnet）
+esp_err_t WebServer::WifiDisconnectHandler(httpd_req_t* req) {
+    // ⚠ 先校验请求体：本接口**会真的断开网络**；若带着坏 JSON 也照做，既危险
+    // （调用方以为参数错会被拒）又与全站"坏 JSON → 400"不一致。
+    // 允许空体（正常调用）；非空则必须是合法 JSON。
+    std::string body = ReadBody(req);
+    if (!body.empty()) {
+        cJSON* root = cJSON_Parse(body.c_str());
+        if (root == nullptr) return SendError(req, "JSON 解析失败");
+        cJSON_Delete(root);
+    }
+    struct Ctx {
+        bool ok = false;
+        std::string err;
+    };
+    auto ctx = std::make_shared<Ctx>();
+    MainSync([ctx]() -> std::string {
+        ctx->ok = wifi_manager::DisconnectSta(&ctx->err);
+        return "ok";
+    });
+    if (!ctx->ok) return SendError(req, ctx->err.empty() ? "断开失败" : ctx->err);
+    return SendJson(req, "{\"status\":\"disconnected\"}");
 }
 
 esp_err_t WebServer::WifiPutHandler(httpd_req_t* req) {
@@ -820,7 +1116,7 @@ esp_err_t WebServer::StaticHandler(httpd_req_t* req) {
 // ============================ 启动 ============================
 bool WebServer::Start() {
     httpd_config_t config = HTTPD_DEFAULT_CONFIG();
-    config.max_uri_handlers = 32;
+    config.max_uri_handlers = kMaxUriHandlers;
     // 浏览器在编辑模板时会连发请求（每敲一键一次预览）。默认 max_open_sockets=7，
     // 连接一多就直接失败；LRU 清理让服务端优先回收最久未用的连接而不是拒绝新连接。
     config.max_open_sockets = 12;
@@ -848,6 +1144,11 @@ bool WebServer::Start() {
         {"/api/wifi", HTTP_PUT, WifiPutHandler, nullptr},
         {"/api/wifi", HTTP_DELETE, WifiDeleteHandler, nullptr},
         {"/api/wifi/scan", HTTP_POST, WifiScanHandler, nullptr},
+        {"/api/wifi/scan", HTTP_GET, WifiScanPollHandler, nullptr},
+        {"/api/wifi/ap", HTTP_PUT, WifiApPutHandler, nullptr},
+        {"/api/wifi/ip", HTTP_PUT, WifiIpPutHandler, nullptr},
+        {"/api/wifi/disconnect", HTTP_POST, WifiDisconnectHandler, nullptr},
+        {"/api/wifi/reconnect", HTTP_POST, WifiReconnectHandler, nullptr},
         {"/api/prizes", HTTP_GET, PrizesGetHandler, nullptr},
         {"/api/prizes", HTTP_PUT, PrizesPutHandler, nullptr},
         {"/api/prizes/reset-stock", HTTP_POST, PrizesResetStockHandler, nullptr},
@@ -855,6 +1156,9 @@ bool WebServer::Start() {
         {"/api/pages", HTTP_PUT, PagesPutHandler, nullptr},
         {"/api/page-mapping", HTTP_PUT, PageMappingPutHandler, nullptr},
         {"/api/page/goto", HTTP_POST, PageGotoHandler, nullptr},
+        {"/api/adjust", HTTP_GET, AdjustGetHandler, nullptr},
+        {"/api/adjust", HTTP_PUT, AdjustPutHandler, nullptr},
+        {"/api/adjust/reset", HTTP_POST, AdjustResetHandler, nullptr},
         {"/api/receipt", HTTP_GET, ReceiptGetHandler, nullptr},
         {"/api/receipt", HTTP_PUT, ReceiptPutHandler, nullptr},
         {"/api/receipt/preview", HTTP_GET, ReceiptPreviewHandler, nullptr},
@@ -878,17 +1182,29 @@ bool WebServer::Start() {
             ++registered;
         }
     }
+    // 编译期护栏：路由数（API + 静态 / 与 /*）不得超过 max_uri_handlers。
+    // 超限时 httpd 只会静默注册失败 → 静态页面全 404，故宁可编译不过。
+    constexpr size_t kApiRouteCount = sizeof(handlers) / sizeof(handlers[0]);
+    static_assert(kApiRouteCount + 2 <= kMaxUriHandlers,
+                  "路由数超过 kMaxUriHandlers：请调大该常量（超限会导致静态通配 /* 注册失败、"
+                  "所有页面 404）");
     httpd_uri_t stat_root = {"/", HTTP_GET, StaticHandler, nullptr};
     if (httpd_register_uri_handler(server_, &stat_root) == ESP_OK) ++registered;
     else ESP_LOGE(TAG, "注册 / 失败");
     httpd_uri_t stat_any = {"/*", HTTP_GET, StaticHandler, nullptr};
     if (httpd_register_uri_handler(server_, &stat_any) == ESP_OK) ++registered;
     else ESP_LOGE(TAG, "注册 /* 失败");
-    ESP_LOGI(TAG, "路由注册完成：%d 条（API %zu + 静态 2）", registered,
-             sizeof(handlers) / sizeof(handlers[0]));
+    constexpr size_t kExpectedRoutes = kApiRouteCount + 2;
+    if (static_cast<size_t>(registered) != kExpectedRoutes) {
+        ESP_LOGE(TAG, "路由注册不完整：成功 %d / 应有 %zu —— **静态页面会全部 404**，"
+                      "请调大 kMaxUriHandlers（当前 %zu）", registered, kExpectedRoutes,
+                 kMaxUriHandlers);
+    } else {
+        ESP_LOGI(TAG, "路由注册完成：%d/%zu 条", registered, kExpectedRoutes);
+    }
 
     ESP_LOGI(TAG, "WebServer 就绪: http://192.168.4.1/（%zu 个 API 端点，通配匹配已启用）",
-             sizeof(handlers) / sizeof(handlers[0]));
+             kApiRouteCount);
     return true;
 }
 

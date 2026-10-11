@@ -76,6 +76,83 @@ WifiMode WifiDecideMode(const std::string& ssid) {
     return ssid.empty() ? WifiMode::kApOnly : WifiMode::kApSta;
 }
 
+// ---- 联网参数校验（纯函数；学习 artnet 的"改 AP 名 / 静态 IP"）----
+
+bool ParseIpv4(const std::string& s, uint32_t* out) {
+    if (s.empty() || s.size() > 15) return false;
+    uint32_t acc = 0;
+    int seg = 0, digits = 0, val = 0;
+    for (size_t i = 0; i <= s.size(); ++i) {
+        if (i == s.size() || s[i] == '.') {
+            if (digits == 0) return false;                    // 空段（"1..2" / 结尾点）
+            if (digits > 3 || val > 255) return false;        // 段超长或越界
+            if (digits > 1 && s[i - digits] == '0') return false;  // 前导零（"01"）易误读
+            acc = (acc << 8) | static_cast<uint32_t>(val);
+            ++seg;
+            digits = 0;
+            val = 0;
+            if (i == s.size()) break;
+            if (seg >= 4) return false;
+        } else if (s[i] >= '0' && s[i] <= '9') {
+            val = val * 10 + (s[i] - '0');
+            ++digits;
+        } else {
+            return false;                                     // 非法字符
+        }
+    }
+    if (seg != 4) return false;
+    if (out) *out = acc;
+    return true;
+}
+
+std::string ValidateApSsid(const std::string& ssid) {
+    if (ssid.empty()) return "热点名不能为空";
+    if (ssid.size() > 31) {
+        return "热点名超过 31 字节（当前 " + std::to_string(ssid.size()) +
+               "；中文按 3 字节计）";
+    }
+    for (unsigned char c : ssid) {
+        if (c < 0x20 || c == 0x7F) return "热点名含控制字符（不可见字符）";
+    }
+    if (ssid.front() == ' ' || ssid.back() == ' ') return "热点名首尾不能有空格";
+    return "";
+}
+
+std::string ValidateApPassword(const std::string& pass) {
+    if (pass.empty()) return "";                 // 空 = 复原默认密码（由调用方处理）
+    if (pass.size() < 8) {
+        return "热点密码至少 8 位（WPA2 要求；当前 " + std::to_string(pass.size()) + " 位）";
+    }
+    if (pass.size() > 63) {
+        return "热点密码超过 63 字节（当前 " + std::to_string(pass.size()) + "）";
+    }
+    for (unsigned char ch : pass) {
+        if (ch < 0x20 || ch == 0x7F) return "热点密码含控制字符（不可见字符）";
+    }
+    return "";
+}
+
+std::string ValidateStaticIp(const std::string& ip, const std::string& mask,
+                             const std::string& gateway) {
+    uint32_t a = 0, m = 0, g = 0;
+    if (!ParseIpv4(ip, &a)) return "IP 地址格式不正确（示例 192.168.1.100）";
+    if (!ParseIpv4(mask, &m)) return "子网掩码格式不正确（示例 255.255.255.0）";
+    if (!ParseIpv4(gateway, &g)) return "网关格式不正确（示例 192.168.1.1）";
+    if (a == 0 || a == 0xFFFFFFFFu) return "IP 地址不能是 0.0.0.0 或广播地址";
+    if (m == 0) return "子网掩码不能是 0.0.0.0";
+    // 掩码必须是连续的 1：取反后 (inv & (inv+1)) == 0
+    uint32_t inv = ~m;
+    if ((inv & (inv + 1)) != 0) {
+        return "子网掩码不合法（必须是连续的 1，如 255.255.255.0）";
+    }
+    // 网关必须与 IP 同网段 —— 配错就失联（现场最常见事故）
+    if ((a & m) != (g & m)) {
+        return "网关与 IP 不在同一网段（示例：IP 192.168.1.100 / 网关 192.168.1.1）";
+    }
+    if (a == g) return "网关不能与设备 IP 相同";
+    return "";
+}
+
 const char* WifiModeName(WifiMode m) { return m == WifiMode::kApSta ? "APSTA" : "AP"; }
 
 int WifiBackoffMs(int attempt) {
@@ -121,11 +198,12 @@ std::string WifiStatusToJson(const WifiStatusSnapshot& s) {
     char buf[512];
     snprintf(buf, sizeof(buf),
              "{\"configured\":%s,\"sta_connected\":%s,\"mode\":\"%s\",\"ssid\":\"%s\","
-             "\"ip\":\"%s\",\"rssi\":%d,\"bars\":%u,\"ap_clients\":%u,"
+             "\"ip\":\"%s\",\"netmask\":\"%s\",\"rssi\":%d,\"bars\":%u,\"ap_clients\":%u,"
              "\"sta_state\":\"%s\",\"time_synced\":%s,\"last_reason\":\"%s\","
              "\"ap_up\":%s,\"ap_ssid\":\"%s\",\"ap_channel\":%u}",
              s.configured ? "true" : "false", s.sta_connected ? "true" : "false",
-             s.mode_is_apsta ? "APSTA" : "AP", JsonEscape(s.ssid).c_str(), s.ip, (int)s.rssi,
+             s.mode_is_apsta ? "APSTA" : "AP", JsonEscape(s.ssid).c_str(), s.ip, s.netmask,
+             (int)s.rssi,
              (unsigned)WifiRssiToBars(s.rssi), (unsigned)s.ap_clients,
              WifiStaStateName((WifiStaState)s.sta_state), s.time_synced ? "true" : "false",
              WifiStatusReasonText(s.last_disconnect_reason), s.ap_up ? "true" : "false",

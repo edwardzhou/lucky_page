@@ -2,70 +2,235 @@
 <html lang="zh-CN">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <title>行程标定</title>
 <style>
-:root{--p:#e8433f;--g:#2ecc71;--bg:#1a1a2e;--card:#16213e;--tx:#eee}
-*{box-sizing:border-box;margin:0;padding:0}
-body{font-family:system-ui,sans-serif;background:var(--bg);color:var(--tx);padding:16px;max-width:720px;margin:0 auto;font-size:14px}
-nav{display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap}
-nav a{color:#8ab4ff;text-decoration:none;font-size:13px;padding:6px 10px;background:var(--card);border-radius:6px}
-.card{background:var(--card);border-radius:12px;padding:16px;margin-bottom:14px}
-table{width:100%;border-collapse:collapse}
-th,td{padding:4px;text-align:center;border-bottom:1px solid #ffffff18;font-size:13px}
-th{color:#9ab}
-input{background:#0d1b3e;color:var(--tx);border:1px solid #345;border-radius:4px;padding:4px;width:70px;text-align:center;font-size:13px}
-button{background:#334;padding:5px 12px;color:#fff;border:none;border-radius:5px;cursor:pointer;font-size:12px}
-button.go{background:#2980b9}
-button.primary{background:var(--p);padding:9px 20px;font-size:14px;margin-top:10px}
-.note{font-size:12px;color:#9ab;line-height:1.7;margin-top:8px}
-.warn{color:#f39c12;font-size:12px;margin-top:8px}
+/* 页面特有样式；通用组件（body/.card/h3/button/input/table/th,td/.note/.warn/.ok/.row…）
+   统一走 app.css 基础层 */
+b{color:var(--tx-dim)}
+/* 状态卡：当前页 / 基础值 / 偏移 / 实际值 —— 调整模式的核心（改了什么、实际多少，一眼可见） */
+.status{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}
+.status .it{background:var(--field);border:1px solid #ffffff14;border-radius:10px;padding:10px 6px;text-align:center}
+.status .k{display:block;font-size:var(--fs-hint);color:var(--tx-dim);margin-bottom:4px}
+.status .v{display:block;font-size:20px;font-weight:700;font-variant-numeric:tabular-nums}
+.status .v.off{color:var(--w)}
+.status .v.act{color:var(--g)}
+/* 微调按钮：大格子、颜色区分加减 */
+.grid3{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+.grid3 button{min-height:56px;font-size:18px;font-weight:700;border-radius:10px}
+.grid3 button.plus{background:#1f6f43}
+.grid3 button.minus{background:#8c3030}
+.grid3 button:active{transform:scale(.97)}
+.grid4{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}
+.grid4 button{min-height:48px}
+#jumpPage{width:88px;text-align:center}
+#tbl input{width:70px}
+details.card summary{cursor:pointer;color:var(--tx-dim);font-size:13px;list-style:revert}
+details.card[open] summary{margin-bottom:10px;color:var(--tx)}
+</style>
+<!-- 移动端统一样式（安全区/44px 触控/16px 输入框/固定操作栏）：必须在各页内联样式之后 -->
+<link rel="stylesheet" href="app.css">
+<style>
+/* 手机端：状态卡 2×2（4 列太窄）、微调按钮加大 —— 必须放在 app.css 之后 */
+@media(max-width:640px){
+  .status{grid-template-columns:repeat(2,1fr)}
+  .grid3 button{min-height:64px;font-size:20px}
+  .grid4{grid-template-columns:repeat(2,1fr)}
+  #tbl input{width:104px}
+  #tbl th,#tbl td{padding:6px 2px}
+}
 </style>
 </head>
-<body>
+<body class="has-actbar">
 <nav><a href="/index.html">抽奖</a><a href="/prizes.html">奖池</a><a href="/receipt.html">小票</a><a href="/logo.html">Logo</a><a href="/calibrate.html">标定</a><a href="/wifi.html">WiFi</a></nav>
+
 <div class="card">
-  <b>30 页行程标定（D21）</b>
+  <b>30 页行程标定 · 页码调整模式</b>
   <div class="note">
-  ⚠️ <b>30 页可用性判据（施工必做）</b>：逐页点动，若任意两页落到同一格、或落页与目标不符 →
-  该机台<b>不支持 30 页</b>，请到「奖池」页下调总页数（建议 10~16）或更换行程更大的执行器。
+    用 <b>±微调</b> 改当前页的行程偏移（立即生效、不翻页），再用 <b>上页/下页/跳页</b> 翻过去
+    <b>用眼睛确认落页</b>。偏移与基础映射分开存，随时可「清零」回到理论值。
+  </div>
+  <div class="note">
+    ⚠️ <b>30 页可用性判据（施工必做）</b>：逐页点动，若任意两页落到同一格、或落页与目标不符 →
+    该机台<b>不支持 30 页</b>，请到「奖池」页下调总页数（建议 10~16）或更换行程更大的执行器。
+  </div>
+</div>
+
+<div class="card">
+  <div class="status">
+    <div class="it"><span class="k">当前页</span><span class="v" id="stCur">–</span></div>
+    <div class="it"><span class="k">基础值</span><span class="v" id="stBase">–</span></div>
+    <div class="it"><span class="k">偏移</span><span class="v off" id="stOff">–</span></div>
+    <div class="it"><span class="k">实际值</span><span class="v act" id="stAct">–</span></div>
+  </div>
+  <div class="note">实际值 = clamp(基础值 + 偏移, 0, 255)，就是真正下发给 DMX 的行程。</div>
+</div>
+
+<div class="card">
+  <h3>微调行程（只改偏移，不翻页）</h3>
+  <div class="grid3">
+    <button class="plus" id="adj_p10" onclick="adjust(10)">+10</button>
+    <button class="plus" id="adj_p5" onclick="adjust(5)">+5</button>
+    <button class="plus" id="adj_p1" onclick="adjust(1)">+1</button>
+    <button class="minus" id="adj_m1" onclick="adjust(-1)">-1</button>
+    <button class="minus" id="adj_m5" onclick="adjust(-5)">-5</button>
+    <button class="minus" id="adj_m10" onclick="adjust(-10)">-10</button>
+  </div>
+</div>
+
+<div class="card">
+  <h3>翻页（真实翻页，用眼睛确认落页）</h3>
+  <div class="grid4">
+    <button id="navPrev" onclick="step(-1)">上页</button>
+    <button id="navNext" onclick="step(1)">下页</button>
+    <button id="navFirst" onclick="gotoPage(0)">首页</button>
+    <button id="navLast" onclick="gotoPage(pages-1)">末页</button>
+  </div>
+  <div class="row">
+    <label>跳到第</label>
+    <input type="number" id="jumpPage" min="1" max="30" value="1">
+    <label>页</label>
+    <button id="jumpBtn" onclick="jump()">点动</button>
+  </div>
+</div>
+
+<div class="card">
+  <h3>清零</h3>
+  <div class="grid4">
+    <button id="clrPage" onclick="clearPage()">清零本页偏移</button>
+    <button id="clrAll" onclick="clearAll()">清零全部偏移</button>
+  </div>
+  <div id="msg" class="warn"></div>
+</div>
+
+<!-- 高级：基础映射（默认折叠，避免误用；值来自设备真实映射，不再是公式猜测） -->
+<details class="card" id="advBase">
+  <summary>高级：基础映射（绝对行程值，一般不用改）</summary>
+  <div class="note">
+    这里是「理论基准」：日常微调用上面的<b>偏移</b>即可。保存会<b>整表覆盖</b>基准映射，
+    只在下述情况使用：重新生成一套均匀行程、或换了执行器。
   </div>
   <table id="tbl"><tr><th>页码</th><th>行程值</th><th>点动验证</th></tr></table>
-  <button class="primary" onclick="save()">保存行程表</button>
-  <span id="msg" class="warn"></span>
-</div>
+  <div class="row"><button class="primary" onclick="saveBase()">保存基础映射</button>
+  <button onclick="loadBase().then(renderBaseTable)">重新读取</button></div>
+</details>
+
 <script>
 const $=s=>document.querySelector((s[0]==='#'||s[0]==='.')?s:('#'+s));
-let values=[];
-async function load(){
-  // 行程值不单独出 GET 接口：从映射文件的网页缓存读取——用 /api/pages 拿跨度，
-  // 值本身从 /api/prizes 不含；这里由保存时的服务端回读。初值按跨度公式生成。
+let pages=30, mapping=[], offsets=[], cur=0;
+
+function setMsg(kind,text){ const m=$('#msg'); m.className=(kind==='ok'?'ok':'warn'); m.textContent=text; }
+function baseOf(p){ return (p>=0&&p<mapping.length)?mapping[p]:0; }
+function offOf(p){ return (p>=0&&p<offsets.length)?offsets[p]:0; }
+function clampOffset(v){ return Math.max(-128, Math.min(127, v)); }
+
+function paintStatus(){
+  $('#stCur').textContent=(cur+1)+'/'+pages;
+  $('#stBase').textContent=baseOf(cur);
+  const o=offOf(cur);
+  $('#stOff').textContent=(o>0?'+':'')+o;
+  $('#stAct').textContent=Math.max(0,Math.min(255,baseOf(cur)+o));
+  const jp=$('#jumpPage'); if(jp){ jp.max=pages; if(!jp.value||+jp.value<1||+jp.value>pages) jp.value=cur+1; }
+}
+
+// 基础映射：读设备**真实**值（旧版这里按公式猜，会把真实映射覆盖掉 —— 已修）
+async function loadBase(){
   const pg=await fetch('/api/pages').then(r=>r.json());
-  const n=pg.total_pages,lo=pg.stroke_min_dmx,hi=pg.stroke_max_dmx;
-  values=Array.from({length:n},(_,i)=>n>1?Math.round(lo+i*(hi-lo)/(n-1)):lo);
+  pages=pg.total_pages||pages;
+  if(Array.isArray(pg.values)&&pg.values.length) mapping=pg.values.slice();
+  return pg;
+}
+// 偏移：与基础映射一起由 /api/adjust 返回
+async function loadAdjust(){
+  const a=await fetch('/api/adjust').then(r=>r.json());
+  pages=a.total_pages||pages;
+  if(Array.isArray(a.mapping)&&a.mapping.length) mapping=a.mapping.slice();
+  offsets=(Array.isArray(a.offsets)&&Array.isArray(a.offsets[0]))?a.offsets[0].slice():[];
+}
+// 设备当前页只作初值：点动(DirectDrive)不更新它，故之后一律用界面本地游标
+async function loadCurrentPage(){
+  try{
+    const s=await fetch('/api/lottery/status').then(r=>r.json());
+    if(typeof s.current_page==='number'&&s.current_page>=0&&s.current_page<pages) cur=s.current_page;
+  }catch(e){ /* 降级：保持本地游标 0，不影响调整 */ }
+}
+
+function renderBaseTable(){
   const t=$('#tbl');
-  for(let i=0;i<n;i++){
+  [...t.querySelectorAll('tr:not(:first-child)')].forEach(r=>r.remove());
+  for(let i=0;i<mapping.length;i++){
     const tr=document.createElement('tr');
     tr.innerHTML=`<td>P${i+1}</td>
-    <td><input type="number" id="v${i}" value="${values[i]}" min="0" max="255"></td>
-    <td><button class="go" onclick="go(${i})">点动</button></td>`;
+      <td><input type="number" id="v${i}" value="${mapping[i]}" min="0" max="255"></td>
+      <td><button class="mini" onclick="gotoPage(${i})">点动</button></td>`;
     t.appendChild(tr);
   }
 }
-async function go(p){
-  const r=await fetch('/api/page/goto',{method:'POST',body:JSON.stringify({page:p})});
-  if(!r.ok){const d=await r.json();$('#msg').textContent='❌ '+(d.error||'状态不允许点动');}
-  else $('#msg').textContent=`已点动到 P${p+1}，请目视确认落页`;
+
+async function adjust(d){
+  const want=clampOffset(offOf(cur)+d);
+  const r=await fetch('/api/adjust',{method:'PUT',
+    body:JSON.stringify({cell:0,page:cur,offset:want})});
+  const j=await r.json().catch(()=>({}));
+  if(!r.ok){ setMsg('warn','❌ '+(j.error||'调整失败')); return; }
+  // 一律以服务端返回为准（钳位、实际值都在服务端算，前端不自己推断）
+  offsets[cur]=j.offset; mapping[cur]=j.base;
+  paintStatus(); renderBaseTable();
+  setMsg('ok','已调整 P'+(cur+1)+'：基础 '+j.base+' '+(j.offset>=0?'+':'')+j.offset+' = 实际 '+j.value);
 }
-async function save(){
-  const n=values.length;
-  const vals=Array.from({length:n},(_,i)=>+$('#v'+i).value);
+
+async function gotoPage(p){
+  if(p<0||p>=pages){ setMsg('warn','页码越界（1~'+pages+'）'); return; }
+  const r=await fetch('/api/page/goto',{method:'POST',body:JSON.stringify({page:p})});
+  const d=await r.json().catch(()=>({}));
+  if(!r.ok){ setMsg('warn','❌ '+(d.error||'状态不允许点动')); return; }
+  cur=p; paintStatus();
+  setMsg('ok','已点动到 P'+(p+1)+'（实际行程 '+$('#stAct').textContent+'），请目视确认落页');
+}
+function step(d){ gotoPage(cur+d); }
+function jump(){
+  const v=+$('#jumpPage').value;
+  if(!(v>=1&&v<=pages)){ setMsg('warn','请输入 1~'+pages+' 之间的页码'); return; }
+  gotoPage(v-1);
+}
+
+async function clearPage(){
+  const r=await fetch('/api/adjust/reset',{method:'POST',body:JSON.stringify({cell:0,page:cur})});
+  const j=await r.json().catch(()=>({}));
+  if(!r.ok){ setMsg('warn','❌ '+(j.error||'清零失败')); return; }
+  offsets[cur]=0; paintStatus();
+  setMsg('ok','已清零 P'+(cur+1)+' 的偏移（回到基础值 '+baseOf(cur)+'）');
+}
+async function clearAll(){
+  if(!confirm('清零**全部**页的行程偏移？\n基础映射不受影响，微调成果会丢失。')) return;
+  const r=await fetch('/api/adjust/reset',{method:'POST',body:JSON.stringify({cell:-1})});
+  const j=await r.json().catch(()=>({}));
+  if(!r.ok){ setMsg('warn','❌ '+(j.error||'清零失败')); return; }
+  offsets=offsets.map(()=>0); paintStatus();
+  setMsg('ok','已清零全部偏移（共 '+(j.cleared||offsets.length)+' 页）');
+}
+
+async function saveBase(){
+  const vals=mapping.map((_,i)=>+$('#v'+i).value);
   const body=JSON.stringify({values:vals,names:vals.map((_,i)=>'P'+(i+1))});
   const r=await fetch('/api/page-mapping',{method:'PUT',body});
-  const d=await r.json();
-  $('#msg').textContent=r.ok?'✅ 已保存（重启后生效于归零断言）':'❌ '+d.error;
+  const d=await r.json().catch(()=>({}));
+  if(!r.ok){ setMsg('warn','❌ '+(d.error||'保存失败')); return; }
+  mapping=vals; paintStatus();
+  setMsg('ok','✅ 基础映射已保存（重启后生效于归零断言）');
 }
-load();
+
+(async function boot(){
+  try{
+    await loadBase();      // 先拿真实基础映射（即使 /api/adjust 失败也能显示基准值）
+    await loadAdjust();    // 再叠加偏移
+    await loadCurrentPage();
+  }catch(e){
+    setMsg('warn','⚠ 读取标定数据失败：'+(e&&e.message?e.message:e));
+  }
+  renderBaseTable(); paintStatus();
+})();
 </script>
+<script src="app.js"></script>
 </body>
 </html>

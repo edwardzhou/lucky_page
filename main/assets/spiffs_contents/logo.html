@@ -2,24 +2,17 @@
 <html lang="zh-CN">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <title>商家 Logo</title>
 <style>
-:root{--p:#e8433f;--g:#2ecc71;--bg:#1a1a2e;--card:#16213e;--tx:#eee}
-*{box-sizing:border-box;margin:0;padding:0}
-body{font-family:system-ui,sans-serif;background:var(--bg);color:var(--tx);padding:16px;max-width:560px;margin:0 auto;font-size:14px}
-nav{display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap}
-nav a{color:#8ab4ff;text-decoration:none;font-size:13px;padding:6px 10px;background:var(--card);border-radius:6px}
-.card{background:var(--card);border-radius:12px;padding:16px;margin-bottom:14px}
-canvas{background:#fff;border-radius:8px;width:100%;image-rendering:pixelated;margin:10px 0}
+/* 页面特有样式；通用组件（body/.card/button/input/.note/.warn…）统一走 app.css 基础层 */
+canvas{background:#fff;border-radius:var(--r-ctl);width:100%;image-rendering:pixelated;margin:10px 0}
 input[type=file]{margin:8px 0}
 input[type=range]{width:100%}
-button{background:#334;padding:8px 18px;color:#fff;border:none;border-radius:6px;cursor:pointer;margin:4px 6px 0 0}
-button.primary{background:var(--p)}
-label{font-size:12px;color:#9ab}
-.info{font-size:12px;color:#9ab;margin-top:10px;line-height:1.6}
-.warn{color:#f39c12;font-size:12px;margin-top:8px}
+.info{font-size:var(--fs-hint);color:var(--tx-dim);margin-top:10px;line-height:1.6}
 </style>
+<!-- 移动端统一样式（安全区/44px 触控/16px 输入框/固定操作栏）：必须在各页内联样式之后 -->
+<link rel="stylesheet" href="app.css">
 </head>
 <body>
 <nav><a href="/index.html">抽奖</a><a href="/prizes.html">奖池</a><a href="/receipt.html">小票</a><a href="/logo.html">Logo</a><a href="/calibrate.html">标定</a><a href="/wifi.html">WiFi</a></nav>
@@ -110,5 +103,6 @@ async function del(){
 }
 showCurrent();
 </script>
+<script src="app.js"></script>
 </body>
 </html>

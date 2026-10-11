@@ -1,5 +1,7 @@
 #include "application.h"
 
+#include "network_reset.h"
+
 #include "printer/logo_store.h"
 #include "printer/receipt_defaults.h"
 
@@ -19,6 +21,9 @@
 #include "wifi/wifi_manager.h"
 
 #define TAG "App"
+
+// 恢复按钮开机守卫（板级宏 → 本文件常量，便于阅读）
+static constexpr int64_t kResetButtonBootGuardMs = RESET_BUTTON_BOOT_GUARD_MS;
 
 // 主循环事件位
 #define MAIN_EVENT_SCHEDULE (1 << 0)
@@ -153,7 +158,29 @@ void Application::InitButton() {
     module_button_->OnLongPress([this]() {
         Schedule([this]() { PrintTestTicket(); });
     });
-    ESP_LOGI(TAG, "[6/7] 按钮就绪 (GPIO%d, active_high)", BUTTON_MODULE_GPIO);
+    ESP_LOGI(TAG, "[6/7] 抽奖按钮就绪 (GPIO%d, active_high)", BUTTON_MODULE_GPIO);
+
+    // 恢复默认配置按钮：上拉输入、按下为低电平、长按 5 秒 → 复位**网络**配置。
+    // 回调在 esp_timer 上下文（禁止阻塞/写 NVS）→ 必须 Schedule 到主线程。
+    reset_button_ = std::make_unique<Button>(RESET_BUTTON_GPIO, 0, RESET_BUTTON_LONG_MS);
+    // ⚠ 开机守卫：复位会清掉已保存的 WiFi 凭据，代价高，
+    // 因此**开机后 30 秒内一律忽略**该按键 —— 万一上电瞬间引脚电平不稳
+    // 被驱动当成"一直按住"，也不会在第一分钟内把用户网络配置抹掉。
+    reset_button_->OnPress([this]() { ESP_LOGI(TAG, "恢复按钮按下（需持续 %d ms）", RESET_BUTTON_LONG_MS); });
+    reset_button_->OnRelease([this]() { ESP_LOGI(TAG, "恢复按钮松开"); });
+    reset_button_->OnLongPress([this]() {
+        const int64_t elapsed_ms = esp_timer_get_time() / 1000;
+        if (elapsed_ms < kResetButtonBootGuardMs) {
+            ESP_LOGW(TAG, "恢复按钮长按被忽略：开机仅 %lld ms（< 守卫 %d ms）", (long long)elapsed_ms,
+                     kResetButtonBootGuardMs);
+            return;
+        }
+        ESP_LOGW(TAG, "恢复按钮长按 %d ms（开机 %lld ms）→ 复位网络配置",
+                 RESET_BUTTON_LONG_MS, (long long)elapsed_ms);
+        Schedule([this]() { ResetNetworkConfigToDefault(); });
+    });
+    ESP_LOGI(TAG, "[6/7] 恢复按钮就绪 (GPIO%d, active_low, 长按 %d ms)",
+             RESET_BUTTON_GPIO, RESET_BUTTON_LONG_MS);
 }
 
 bool Application::PrintTemplateForTest(const ReceiptTemplateV3& tmpl) {

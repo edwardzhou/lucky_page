@@ -57,6 +57,29 @@ static_assert(PRINTER_TX_PIN != PRINTER_RX_PIN, "打印机 TX/RX 不能同脚");
 // ===== 红外接收（保留，RMT） =====
 #define IR_RECEIVER_GPIO     GPIO_NUM_3
 
+// ===== 恢复默认配置按钮（2026-10-10）=====
+// 上拉输入、按下为低电平、**长按 5 秒**触发"恢复网络默认配置"（AP 名/AP 密码/已保存网络/IP 模式）。
+// 选 GPIO5 的理由：非 strapping（避开 G0/G3/G45/G46）、无板上外设、无 USB/Flash/PSRAM 复用
+// （N16R8 的 Flash/PSRAM 占 26..37）。
+// ⚠ 曾考虑 GPIO4，但它已是 DMX512 的 DE（发送使能）—— 不可复用。
+#define RESET_BUTTON_GPIO      GPIO_NUM_5
+#define RESET_BUTTON_LONG_MS   5000
+// 开机守卫：复位会清掉已保存 WiFi 凭据，代价高 → 开机后这段时间内忽略该按键
+// （防止上电瞬间电平不稳被驱动判定为"持续按住"而误清配置）
+#define RESET_BUTTON_BOOT_GUARD_MS  30000
+
+static_assert(RESET_BUTTON_GPIO != BUTTON_MODULE_GPIO, "恢复按钮不能与抽奖按钮同脚");
+static_assert(RESET_BUTTON_GPIO != IR_RECEIVER_GPIO, "恢复按钮不能与红外接收同脚");
+static_assert(RESET_BUTTON_GPIO != PRINTER_TX_PIN && RESET_BUTTON_GPIO != PRINTER_RX_PIN &&
+              RESET_BUTTON_GPIO != PRINTER_FLOW_PIN, "恢复按钮不能与打印机三脚冲突");
+static_assert(RESET_BUTTON_GPIO != DMX512_TX_PIN && RESET_BUTTON_GPIO != DMX512_RX_PIN &&
+              RESET_BUTTON_GPIO != DMX512_DE_PIN, "恢复按钮不能与 DMX512（含 DE=G4）冲突");
+static_assert(RESET_BUTTON_GPIO != GPIO_NUM_19 && RESET_BUTTON_GPIO != GPIO_NUM_20,
+              "恢复按钮禁止占用 G19/G20（USB D-/D+）");
+static_assert(RESET_BUTTON_GPIO != GPIO_NUM_43 && RESET_BUTTON_GPIO != GPIO_NUM_44,
+              "恢复按钮禁止占用 G43/G44（板载 USB-UART 桥）");
+static_assert(RESET_BUTTON_LONG_MS == 5000, "恢复按钮长按阈值按需求固定为 5 秒");
+
 // （SD 卡引脚块已删除：lucky-page 从未实现 SD，logo/奖池走 SPIFFS；
 //   且原 10/11/9/12 与现在的打印机 9/10/11 冲突）
 

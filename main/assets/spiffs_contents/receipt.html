@@ -2,23 +2,28 @@
 <html lang="zh-CN">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <title>小票画布编辑</title>
 <style>
-:root{--p:#e8433f;--g:#2ecc71;--bg:#1a1a2e;--card:#16213e;--tx:#eee;--bd:#345;--colw:14px;--lineh:22px}
-*{box-sizing:border-box;margin:0;padding:0}
-body{font-family:system-ui,-apple-system,sans-serif;background:var(--bg);color:var(--tx);padding:14px;font-size:14px}
-nav{display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap}
-nav a{color:#8ab4ff;text-decoration:none;font-size:13px;padding:6px 10px;background:var(--card);border-radius:6px}
-nav a.on{background:var(--p);color:#fff}
+/* 页面特有样式；通用组件（body/.card/h3/button/input/table/.row/.note/.warn…）
+   统一走 app.css 基础层。本页是**宽度例外**：body 加了 class="wide"（画布+属性栏并排）。 */
+:root{--colw:14px;--lineh:22px}
 .layout{display:grid;grid-template-columns:1fr 300px;gap:14px;align-items:start}
-@media(max-width:1000px){.layout{grid-template-columns:1fr}}
-.card{background:var(--card);border-radius:12px;padding:12px;margin-bottom:12px}
-h3{font-size:14px;margin-bottom:8px;color:#cfe}
+/* ≤1000px 单列；用 block 而非 grid：grid 项 min-width:auto 会被宽内容（标尺/画布）撑爆 */
+@media(max-width:1000px){.layout{display:block;min-width:0}}
 .toolbar{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px;align-items:center}
-button{background:#334;padding:6px 11px;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:13px}
-button:hover{background:#445}button.pri{background:var(--p)}button.mini{padding:3px 8px;font-size:12px}
-#stage{overflow:auto;padding:10px;background:#0b1226;border-radius:10px}
+.toolbar details{width:100%}
+.toolbar details summary{font-size:var(--fs-hint);color:var(--tx-dim);cursor:pointer;padding:4px 0}
+.toolbar .zgrp{display:flex;gap:4px;align-items:center}
+#zoomTxt{font-size:11px;color:var(--tx-dim);min-width:34px;text-align:center}
+#stage{overflow:auto;padding:10px;background:#0b1226;border-radius:10px;max-width:100%;overscroll-behavior:contain}
+/* 触控拖动前提：不禁用浏览器手势的话，手指拖动会被判成滚动，元素拖不动 */
+.el{touch-action:none;-webkit-touch-callout:none}
+.el.dragging{border-color:#7ab8ff;box-shadow:0 6px 18px #000a;z-index:9}
+/* 抽屉把手/收起按钮只在手机端出现（桌面端属性面板仍是右栏） */
+.handle,.sheet-close{display:none}
+/* 底栏「属性」按钮只服务手机端（桌面端右栏常显，按钮多余） */
+#propsBtn{display:none}
 #canvas{position:relative;background:#fff;color:#000;border-radius:4px;box-shadow:0 6px 24px #0008;
        font-family:"Menlo","Consolas","Courier New",monospace;font-size:13px;line-height:var(--lineh)}
 #canvas #grid{position:absolute;inset:0;pointer-events:none;background-image:linear-gradient(to right,#00000012 1px,transparent 1px);background-size:var(--colw) 100%}
@@ -29,27 +34,53 @@ button:hover{background:#445}button.pri{background:var(--p)}button.mini{padding:
 .el.bg{background:repeating-linear-gradient(135deg,#0af1,#0af1 8px,transparent 8px,transparent 16px);
        border:1px dashed #0863;opacity:.85}
 .el.feed{background:repeating-linear-gradient(45deg,#00000008,#00000008 6px,transparent 6px,transparent 12px);color:#888;font-size:11px}
-#ruler{display:flex;font-size:10px;color:#789;font-family:monospace;margin-bottom:4px}
+#ruler{display:flex;font-size:10px;color:var(--tx-mute);font-family:monospace;margin-bottom:4px}
 #ruler span{width:calc(var(--colw)*10);flex:0 0 auto;border-left:1px solid #7893;padding-left:2px}
-.panel label{display:block;font-size:11px;color:#9ab;margin:8px 0 3px}
-input,select,textarea{background:#0a1730;color:var(--tx);border:1px solid var(--bd);border-radius:5px;padding:6px;font-size:13px;width:100%;font-family:inherit}
-textarea{font-family:monospace;min-height:52px;resize:vertical}
-.row{display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-top:6px}
-.psel{max-height:170px;overflow:auto;border:1px solid var(--bd);border-radius:6px;padding:4px;margin-top:6px}
-.psel div{display:flex;justify-content:space-between;gap:6px;padding:3px 5px;border-radius:4px;cursor:pointer;font-size:12px}
+.panel label{display:block;font-size:11px;color:var(--tx-dim);margin:8px 0 3px}
+/* 属性面板里的输入控件要撑满（基础层不设宽度） */
+#form input,#form select,#form textarea{width:100%}
+#form textarea{font-family:monospace;min-height:52px;resize:vertical}
+.psel{max-height:170px;overflow:auto;border:1px solid var(--bd);border-radius:var(--r-ctl);padding:4px;margin-top:6px}
+.psel div{display:flex;justify-content:space-between;gap:6px;padding:3px 5px;border-radius:4px;cursor:pointer;font-size:var(--fs-hint)}
 .psel div:hover{background:#243b6b}
-.psel code{color:#8fd}.psel span{color:#789;font-size:11px}
-.hint{font-size:11px;color:#789;line-height:1.6}
-.warn{color:#f39c12;font-size:12px;margin-top:6px}.ok{color:var(--g);font-size:12px;margin-top:6px}
-pre.preview{background:#fff;color:#000;padding:10px;border-radius:8px;font-size:12px;white-space:pre;font-family:monospace;overflow:auto;max-height:280px;display:none}
+.psel code{color:#8fd}.psel span{color:var(--tx-mute);font-size:11px}
+pre.preview{background:#fff;color:#000;padding:10px;border-radius:var(--r-ctl);font-size:12px;white-space:pre;font-family:monospace;overflow:auto;max-height:280px;display:none}
+/* ---- 手机端（必须放在最后：媒体查询不提升优先级，靠后才能在基础规则之后生效）---- */
+@media(max-width:640px){
+  /* 手机端隐藏标尺：省纵向空间，精确列位在属性面板里输入 */
+  #ruler{display:none}
+  .handle{display:block}
+  .sheet-close{display:inline-flex}
+  #canvas{max-width:100%}
+  .toolbar button{flex:1 1 auto}
+  /* 主操作卡变底部固定栏（复用同一批按钮，不复制 DOM → 冒烟测试选择器仍唯一） */
+  .card.actions{position:fixed;left:0;right:0;bottom:0;z-index:60;margin:0;border-radius:0;
+    padding:10px max(12px,env(safe-area-inset-left)) calc(env(safe-area-inset-bottom,0px) + 10px)
+            max(12px,env(safe-area-inset-right));
+    background:rgba(22,33,62,.97);border-top:1px solid #2a3a5a;box-shadow:0 -6px 20px #0007}
+  .card.actions .row{flex-wrap:nowrap;margin:0;gap:8px}
+  .card.actions .row>button{flex:1 1 0;min-height:44px;font-size:14px;padding:10px 8px}
+  #propsBtn{display:inline-flex;flex:0 0 auto;padding:10px 12px}
+  .card.actions .hint{display:none}
+  .card.actions #msg{position:absolute;left:12px;right:12px;top:-22px;margin:0;text-align:center;font-size:12px;
+    background:rgba(22,33,62,.92);border-radius:6px;padding:2px 6px}
+  /* 属性抽屉抬高到固定栏之上，改属性时「保存」仍可点 */
+  #panels{position:fixed;left:0;right:0;bottom:calc(env(safe-area-inset-bottom,0px) + 66px);z-index:70;
+    max-height:52vh;overflow:auto;overscroll-behavior:contain;-webkit-overflow-scrolling:touch;
+    background:var(--card);border-radius:16px 16px 0 0;border-top:1px solid #2a3a5a;
+    box-shadow:0 -10px 30px #0009;padding:0 12px 12px;transform:translateY(calc(100% + 90px));
+    transition:transform .22s ease;will-change:transform}
+  body.sheet-open #panels{transform:none}
+  /* 抽屉打开时给页面留出额外滚动空间：否则最底部的元素没法滚到抽屉上方（会被永久盖住） */
+  body.sheet-open .layout{padding-bottom:52vh}
+  #panels .card{background:transparent;padding:6px 0;margin:0 0 8px}
+}
 </style>
+<!-- 移动端统一样式（安全区/44px 触控/16px 输入框/底部抽屉/固定操作栏）：必须在内联样式之后 -->
+<link rel="stylesheet" href="app.css">
 </head>
-<body>
-<nav>
-<a href="/index.html">抽奖</a><a href="/prizes.html">奖池</a>
-<a href="/receipt.html" class="on">小票画布</a><a href="/logo.html">Logo</a>
-<a href="/calibrate.html">标定</a><a href="/wifi.html">WiFi</a>
-</nav>
+<body class="wide has-actbar">
+<nav><a href="/index.html">抽奖</a><a href="/prizes.html">奖池</a><a href="/receipt.html">小票</a><a href="/logo.html">Logo</a><a href="/calibrate.html">标定</a><a href="/wifi.html">WiFi</a></nav>
 <div id="errbar" style="display:none;background:#e8433f;color:#fff;padding:8px 12px;border-radius:8px;
      margin-bottom:10px;font-size:13px;word-break:break-all"></div>
 <div class="layout">
@@ -65,9 +96,20 @@ pre.preview{background:#fff;color:#000;padding:10px;border-radius:8px;font-size:
         <span style="color:#9ab;font-size:12px;margin-left:8px">纸宽</span>
         <select id="paper" onchange="setPaper(this.value)" style="width:auto">
           <option value="32">58mm（32 列）</option><option value="48">80mm（48 列）</option></select>
+        <span class="zgrp" title="画布缩放">
+          <button class="mini" id="zoomOut" onclick="zoomStep(-0.15)" aria-label="缩小">－</button>
+          <button class="mini" id="fitBtn" onclick="fitCanvas()">适应宽度</button>
+          <button class="mini" id="zoomIn" onclick="zoomStep(0.15)" aria-label="放大">＋</button>
+          <span id="zoomTxt">100%</span>
+        </span>
         <button class="mini" onclick="togglePreview()">服务端预览</button>
-        <button class="mini" onclick="loadDefault()">恢复出厂（当前类型）</button>
-        <button class="mini" onclick="resetAll()">全部重置为出厂</button>
+        <details>
+          <summary>更多（出厂 / 重置）</summary>
+          <div class="row">
+            <button class="mini" onclick="loadDefault()">恢复出厂（当前类型）</button>
+            <button class="mini" onclick="resetAll()">全部重置为出厂</button>
+          </div>
+        </details>
       </div>
       <div class="toolbar" style="border-top:1px solid #2a3a5a;padding-top:8px">
         <span style="color:#9ab;font-size:12px">版式类型</span>
@@ -94,17 +136,25 @@ pre.preview{background:#fff;color:#000;padding:10px;border-radius:8px;font-size:
     <pre class="preview" id="preview"></pre>
   </div>
   <div>
-    <div class="card panel">
-      <h3>元素属性</h3>
-      <div class="hint" id="noSel">在画布上点选一个元素</div>
-      <div id="form" style="display:none"></div>
+    <!-- 桌面端：右栏；手机端：底部抽屉（CSS 在 ≤640px 时把 #panels 固定到底部） -->
+    <div id="panels">
+      <div class="handle"></div>
+      <button class="mini sheet-close" onclick="closeSheet()">收起</button>
+      <div class="card panel">
+        <h3>元素属性</h3>
+        <div class="hint" id="noSel">在画布上点选一个元素</div>
+        <div id="form" style="display:none"></div>
+      </div>
+      <div class="card panel">
+        <h3>插入参数</h3>
+        <div class="psel" id="params">加载中…</div>
+      </div>
     </div>
-    <div class="card panel">
-      <h3>插入参数</h3>
-      <div class="psel" id="params">加载中…</div>
-    </div>
-    <div class="card">
+    <!-- 主操作：手机端变底部固定栏（同一批按钮，不复制 DOM） -->
+    <div class="card actions">
       <div class="row">
+        <!-- 手机端保底入口：任何手势下都能打开属性面板（桌面端隐藏，右栏本来就常显） -->
+        <button id="propsBtn" class="pri" onclick="togglePropsSheet()">属性</button>
         <button class="pri" onclick="save()">保存模板</button>
         <button onclick="render()">刷新预览</button>
         <button onclick="printTest()">打测试页</button>
@@ -135,6 +185,11 @@ window.addEventListener('unhandledrejection',function(e){
 });
 const $=s=>document.querySelector((s[0]==='#'||s[0]==='.')?s:('#'+s)); const PAPER=$('#canvas');
 let blocks=[], params=[], sel=-1, paperCols=32, colw=14, lineh=22, mode='flow', logoInfo={w:0,h:0};
+// 缩放：手机端默认「适应宽度」（否则 32 列 × 14px = 448px 宽于手机屏，必须横向滚动）；
+// 桌面端保持 100%，即 colw=14/lineh=22 —— 这是 web_smoke.py 拖动断言（28px=2 列）的前提，
+// 绝不能在桌面端自动改，否则冒烟测试与既有手感一起坏掉。
+let zoom=1, fitMode=true;
+const isNarrow=()=>window.matchMedia('(max-width:640px)').matches;
 // 接口块 → 画布块（字段名归一化，缺一不可，否则保存时会丢数据）
 function fromServer(b){
   const o={type:b.type, col:(b.col===undefined?0:b.col),
@@ -205,7 +260,7 @@ function paint(){
     el.style.left=(pos.col*colw)+'px'; el.style.top=(pos.row*lineh)+'px';
     el.style.width=(pos.avail*colw-2)+'px'; el.style.minHeight=(pos.span*lineh)+'px';   // 最小高度：盒子随内容自适应，绝不裁字
     el.style.lineHeight=((b.size===2?2:1)*lineh)+'px';
-    el.style.fontSize=(13*(b.size===2?2:1))+'px';
+    el.style.fontSize=(Math.max(7,Math.round(13*zoom))*(b.size===2?2:1))+'px';
     el.style.fontWeight=b.bold?'700':'400';
     if(b.type==='line'){
       const box=b.size===2?Math.floor(pos.avail/2):pos.avail;
@@ -218,33 +273,116 @@ function paint(){
     PAPER.appendChild(el);
   });
 }
+// ---- 缩放：适应宽度 / 手动步进 -------------------------------------------------
+// 适应宽度**按可用宽度反算列宽**（而不是先算比例再四舍五入），保证结果必然不溢出
+function fitCanvas(){
+  const st=$('#stage'); if(!st) return;
+  const avail=st.clientWidth-20;                    // 扣掉 #stage 左右各 10px 内边距
+  if(avail<=0) return;
+  const c=Math.max(5, Math.floor(avail/paperCols));
+  fitMode=true; colw=c; zoom=c/14; lineh=Math.max(9,Math.round(22*zoom));
+  paint(); syncZoomTxt();
+}
+function setZoom(z,isFit){
+  fitMode=!!isFit;
+  zoom=Math.max(0.4,Math.min(1,z));                 // 上限 100%：放大只会虚化，无收益
+  colw=Math.max(5,Math.round(14*zoom)); lineh=Math.max(9,Math.round(22*zoom));
+  paint(); syncZoomTxt();
+}
+function zoomStep(d){ setZoom(colw/14+d,false); }
+function syncZoomTxt(){
+  const t=$('#zoomTxt'); if(t) t.textContent=Math.round(colw/14*100)+'%';
+}
+// 屏幕旋转/窗口变化：仍处于「适应宽度」才跟随，用户手动缩放后不打扰
+function autoFit(){ if(fitMode && isNarrow()) fitCanvas(); }
+window.addEventListener('resize',autoFit);
+window.addEventListener('orientationchange',function(){ setTimeout(autoFit,300); });
+
+// ---- 手机端属性抽屉：桌面端这些 class 不产生任何效果（样式全在 ≤640px 内） ----
+// ⚠ 手机端最容易踩的坑：抽屉是**底部固定**的，弹出后会盖住画布。
+// 实测（390×844）：抽屉顶边 y=339，而画布元素从 y=507 起 → 整个画布被盖住，
+// 用户看不到自己在编辑哪个元素。故：
+//   1) 只在中指**轻点**选中时弹抽屉（拖动时不弹，否则手指下就被盖一层）；
+//   2) 弹出后把**选中元素**平滑滚到抽屉上方的可见带内；
+//   3) 抽屉打开时给页面留出额外滚动空间，最底部的元素也能滚上去。
+let sheetSel=-2;
+function openSheet(i){
+  document.body.classList.add('sheet-open');
+  if(i!==sheetSel){ sheetSel=i; ensureSelectedVisibleSoon(); }
+}
+function closeSheet(){ document.body.classList.remove('sheet-open'); sheetSel=-2; }
+// 底栏「属性」保底入口：切换抽屉显隐（手机端；桌面端按钮隐藏）
+function togglePropsSheet(){
+  if(sel<0||!blocks[sel]){ setMsg('warn','先在画布上点选一个元素，再点「属性」'); return; }
+  if(document.body.classList.contains('sheet-open')) closeSheet(); else openSheet(sel);
+}
+function ensureSelectedVisibleSoon(){
+  requestAnimationFrame(function(){ setTimeout(ensureSelectedVisible,40); });
+}
+function ensureSelectedVisible(){
+  if(!isNarrow()) return;
+  const el=PAPER.querySelector('.el.sel'), p=$('#panels');
+  if(!el||!p||!document.body.classList.contains('sheet-open')) return;
+  const vh=document.documentElement.clientHeight;
+  const gap=parseFloat(getComputedStyle(p).bottom)||0;   // 抽屉底到视口底的距离（=底部操作栏高）
+  const sheetTop=vh-gap-p.offsetHeight;                 // offsetHeight 不含 transform，取值稳定
+  const r=el.getBoundingClientRect();
+  const pad=20;                                       // 与抽屉顶边留出可见间隙
+  let dy=0;
+  if(r.bottom>sheetTop-pad) dy=Math.ceil(r.bottom-(sheetTop-pad));   // 被抽屉压住 → 往上滚
+  else if(r.top<6) dy=Math.floor(r.top-6);                            // 滚出上边 → 往下滚
+  if(dy) window.scrollBy({top:dy,behavior:'smooth'});
+}
+
 let drag=null;
+// ⚠ 轻点抖动阈值：真手指"点一下"必然伴随 1~3px 抖动，会产生 pointermove。
+// 若把任何 pointermove 都当成拖动，真机上轻点就永远不会弹属性抽屉
+// （真机反馈"点击元素没看到属性面板"就是这个原因；而 touchscreen.tap 不产生
+//  中间 move，所以自动化测试曾漏掉它）。
+const TAP_SLOP=6;
 function startDrag(e,i,el){
-  e.preventDefault(); sel=i; paint(); paintProps();
+  e.preventDefault(); sel=i; paint(); paintProps();   // 只高亮选中，不弹抽屉（拖动时画布要完整可见）
+  el.classList.add('dragging');                      // 触屏手指会遮住元素，给个抬升反馈
   const L0=layout();
   const curRow=(L0.rows[i]&&L0.rows[i].row)||0;      // 当前生效行（自动块取其流式行）
   drag={i,x0:e.clientX,y0:e.clientY,col0:blocks[i].col||0,baseRow:curRow,moved:false};
   const move=ev=>{
-    if(!drag) return; drag.moved=true;
-    const dcol=Math.round((ev.clientX-drag.x0)/colw);
-    blocks[drag.i].col=Math.max(0,Math.min(paperCols-1,drag.col0+dcol));
-    // 纵向拖动 → 钉住绝对行（画布语义：元素停在你放的地方）
-    const drow=Math.round((ev.clientY-drag.y0)/lineh);
-    if(drow!==0){
-      // 基准行在拖动开始时固定，绝不能每帧重算（否则会累加跑飞）
-      blocks[drag.i].row=Math.max(0,Math.min(300,drag.baseRow+drow));
+    if(!drag) return;
+    const dx=ev.clientX-drag.x0, dy=ev.clientY-drag.y0;
+    if(!drag.moved){
+      if(Math.abs(dx)<TAP_SLOP && Math.abs(dy)<TAP_SLOP) return;   // 抖动 → 仍视为轻点
+      drag.moved=true;
+    }
+    // 位移一律以按下点为基准（拖动开始时固定，绝不能每帧重算，否则会累加跑飞）
+    blocks[drag.i].col=Math.max(0,Math.min(paperCols-1,drag.col0+Math.round(dx/colw)));
+    if(Math.round(dy/lineh)!==0){
+      blocks[drag.i].row=Math.max(0,Math.min(300,drag.baseRow+Math.round(dy/lineh)));
     }
     paint();
   };
   const up=()=>{ document.removeEventListener('pointermove',move); document.removeEventListener('pointerup',up);
-                 if(drag&&drag.moved){ paintProps(); paint(); render(); } drag=null; };
+                 document.removeEventListener('pointercancel',up);
+                 [...PAPER.querySelectorAll('.el')].forEach(x=>x.classList.remove('dragging'));
+                 const moved=drag&&drag.moved;
+                 if(moved){ paintProps(); paint(); render(); }
+                 // 轻点 → 弹抽屉（并滚到可见带）；拖动 → 不弹；抽屉已开时保持元素可见
+                 if(moved){ if(document.body.classList.contains('sheet-open')) ensureSelectedVisible(); }
+                 else if(sel>=0){ openSheet(sel); }
+                 drag=null; };
   document.addEventListener('pointermove',move); document.addEventListener('pointerup',up);
+  document.addEventListener('pointercancel',up);     // 触屏被系统打断（来电/手势）也要收尾
 }
+// 点画布空白处 = 取消选中并收起抽屉
+PAPER.addEventListener('pointerdown',function(e){
+  if(e.target===PAPER || e.target.id==='grid'){ sel=-1; paint(); paintProps(); }
+});
 const esc=s=>String(s===undefined||s===null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/"/g,'&quot;');
 function paintProps(){
   const f=$('#form'), b=blocks[sel];
-  if(!b){ $('#noSel').style.display='block'; f.style.display='none'; return; }
+  if(!b){ $('#noSel').style.display='block'; f.style.display='none'; closeSheet(); return; }
   $('#noSel').style.display='none'; f.style.display='block';
+  // 注意：这里**不**主动开抽屉 —— 开抽屉的时机由交互决定
+  // （轻点选中 / 新增元素才开；拖动时不开，否则手指下被盖一层）
   const tag={line:'文字行',separator:'分隔线',qr:'二维码',logo:'Logo',feed:'走纸'}[b.type];
   let h=`<div class="hint" style="margin-bottom:6px">#${sel+1} ${tag}
     <button class="mini" style="float:right" onclick="del()">删除</button>
@@ -308,10 +446,14 @@ function add(t){ const b={type:t,col:0};
   if(t==='separator'){b.sep_char='-';}
   if(t==='qr'){b.text='{ticket}{check}';b.qr_size=6;b.qr_ecc=49;}
   if(t==='feed'){b.feed_lines=4;}
-  const at=sel>=0?sel+1:blocks.length; blocks.splice(at,0,b); sel=at; paint(); paintProps(); render(); }
+  const at=sel>=0?sel+1:blocks.length; blocks.splice(at,0,b); sel=at; paint(); paintProps(); render();
+  openSheet(sel);   // 新增元素后直接开抽屉编辑（并把新元素滚到抽屉上方可见带）
+}
 function del(){ if(sel>=0){ blocks.splice(sel,1); sel=-1; paint(); paintProps(); render(); } }
 function dup(){ if(sel>=0){ blocks.splice(sel+1,0,JSON.parse(JSON.stringify(blocks[sel]))); sel++; paint(); paintProps(); render(); } }
-function setPaper(v){ paperCols=+v; blocks.forEach(b=>{ if((b.col||0)>=paperCols) b.col=paperCols-1; }); paint(); paintProps(); render(); }
+function setPaper(v){ paperCols=+v; blocks.forEach(b=>{ if((b.col||0)>=paperCols) b.col=paperCols-1; });
+  if(fitMode && isNarrow()) fitCanvas(); else { paint(); }
+  paintProps(); render(); }
 const MODE_HINT = {
   flow:  '纯文字：全部走打印机文字，帧 ~0.5KB、约 1 秒/张、行数不限，但无图无边框。',
   canvas:'画布：整票合成位图，文字可与图逐像素叠加、四边完整边框；代价是帧 ~32KB、约 8 秒/张，且行数受图高限制。',
@@ -519,8 +661,12 @@ async function boot(){
   params=p.params||[];
   $('#params').innerHTML=params.map(x=>`<div onclick="insertParam('${x.key}')"><code>{${x.key}}</code><span>${x.desc}</span></div>`).join('');
   paint(); render();
+  // 手机端默认适应宽度（等一帧让 CSS/字体落定后再量宽度，避免量到未布局的值）
+  if(isNarrow()){ fitCanvas(); setTimeout(fitCanvas,150); } else { syncZoomTxt(); }
+  if(isNarrow()) closeSheet();          // 初始不弹抽屉，等用户点选元素
 }
 boot();
 </script>
+<script src="app.js"></script>
 </body>
 </html>

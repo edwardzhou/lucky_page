@@ -412,3 +412,90 @@ TEST(WebPath, KnownPagesAreServedWhenPresent) {
         EXPECT_TRUE(WebStaticDecide(p, true) == StaticRouteAction::kServeFile);
     }
 }
+
+// ============================================================================
+// 联网参数校验（学习 artnet：AP 名可改 / 静态 IP 可配）
+// 这些是"配错就失联"的现场事故点，必须在接口层就拦掉，故逐条锁定。
+// 断言风格沿用本文件既有约定：EXPECT_STREQ(期望, 结果.c_str()) + 子串检查原因。
+// ============================================================================
+
+TEST(Ipv4, ParseAcceptsValidAndRejectsJunk) {
+    uint32_t v = 0;
+    EXPECT_TRUE(ParseIpv4("192.168.1.100", &v));
+    EXPECT_EQ(0xC0A80164u, v);
+    EXPECT_TRUE(ParseIpv4("0.0.0.0", &v));
+    EXPECT_EQ(0u, v);
+    EXPECT_TRUE(ParseIpv4("255.255.255.255", &v));
+    EXPECT_EQ(0xFFFFFFFFu, v);
+
+    EXPECT_FALSE(ParseIpv4("", &v));
+    EXPECT_FALSE(ParseIpv4("192.168.1", &v));          // 段数不足
+    EXPECT_FALSE(ParseIpv4("192.168.1.1.1", &v));      // 段数过多
+    EXPECT_FALSE(ParseIpv4("192.168..1", &v));         // 空段
+    EXPECT_FALSE(ParseIpv4("192.168.1.", &v));         // 结尾点
+    EXPECT_FALSE(ParseIpv4("256.1.1.1", &v));          // 越界
+    EXPECT_FALSE(ParseIpv4("192.168.1.01", &v));       // 前导零（易误读）
+    EXPECT_FALSE(ParseIpv4("192.168.1.a", &v));        // 非数字
+    EXPECT_FALSE(ParseIpv4("192.168.1.1 ", &v));       // 尾随空格
+    EXPECT_FALSE(ParseIpv4("9999.1.1.1", &v));         // 段超长
+}
+
+TEST(ApSsid, AcceptsValidNames) {
+    EXPECT_STREQ("", ValidateApSsid("lucky-page").c_str());
+    EXPECT_STREQ("", ValidateApSsid("店铺一号").c_str());           // 中文 4 字 = 12 字节
+    EXPECT_STREQ("", ValidateApSsid(std::string(31, 'a')).c_str()); // 31 字节正好合法
+}
+
+TEST(ApSsid, RejectsEmptyControlSpaceAndTooLong) {
+    EXPECT_NE(std::string::npos, ValidateApSsid("").find("不能为空"));
+    EXPECT_NE(std::string::npos, ValidateApSsid(" 前导空格").find("空格"));
+    EXPECT_NE(std::string::npos, ValidateApSsid("尾随空格 ").find("空格"));
+    EXPECT_NE(std::string::npos,
+              ValidateApSsid(std::string("a") + '\x01' + "b").find("控制字符"));
+    EXPECT_NE(std::string::npos, ValidateApSsid(std::string(32, 'a')).find("31"));
+}
+
+TEST(StaticIp, AcceptsSameSubnetConfig) {
+    EXPECT_STREQ("", ValidateStaticIp("192.168.1.100", "255.255.255.0", "192.168.1.1").c_str());
+    EXPECT_STREQ("", ValidateStaticIp("10.0.5.7", "255.255.0.0", "10.0.0.1").c_str());
+}
+
+TEST(StaticIp, RejectsNonContiguousMask) {
+    EXPECT_NE(std::string::npos,
+              ValidateStaticIp("192.168.1.100", "255.0.255.0", "192.168.1.1").find("掩码"));
+    EXPECT_NE(std::string::npos,
+              ValidateStaticIp("192.168.1.100", "255.255.255.1", "192.168.1.1").find("掩码"));
+    EXPECT_NE(std::string::npos,
+              ValidateStaticIp("192.168.1.100", "0.0.0.0", "192.168.1.1").find("掩码"));
+}
+
+TEST(StaticIp, RejectsGatewayOutsideSubnetOrEqualIp) {
+    // 网关跨网段 → 配了就失联（现场最常见事故）
+    EXPECT_NE(std::string::npos,
+              ValidateStaticIp("192.168.1.100", "255.255.255.0", "192.168.2.1").find("网段"));
+    EXPECT_NE(std::string::npos,
+              ValidateStaticIp("192.168.1.100", "255.255.255.0", "192.168.1.100").find("网关"));
+}
+
+TEST(StaticIp, RejectsBadFormatAndUnusableAddress) {
+    EXPECT_NE(std::string::npos,
+              ValidateStaticIp("192.168.1", "255.255.255.0", "192.168.1.1").find("IP"));
+    EXPECT_NE(std::string::npos,
+              ValidateStaticIp("0.0.0.0", "255.255.255.0", "192.168.1.1").find("IP"));
+    EXPECT_NE(std::string::npos,
+              ValidateStaticIp("192.168.1.100", "255.255.255.0", "abc").find("网关"));
+}
+
+TEST(ApPassword, ValidationRules) {
+    // 合法：8..63 字节
+    EXPECT_STREQ("", ValidateApPassword("12345678").c_str());
+    EXPECT_STREQ("", ValidateApPassword(std::string(63, 'x')).c_str());
+    EXPECT_STREQ("", ValidateApPassword("我的店铺2026密码").c_str());   // 中文按字节计
+    EXPECT_STREQ("", ValidateApPassword("").c_str());   // 空 = 复原默认（不报错）
+    // 太短 / 太长
+    EXPECT_NE(std::string::npos, ValidateApPassword("1234567").find("8 位"));
+    EXPECT_NE(std::string::npos, ValidateApPassword(std::string(64, 'x')).find("63"));
+    // 控制字符
+    EXPECT_NE(std::string::npos,
+              ValidateApPassword(std::string("abcd") + '\t' + "efgh").find("控制字符"));
+}

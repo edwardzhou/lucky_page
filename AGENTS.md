@@ -46,6 +46,7 @@ TTL 热敏打印机出票；Web 页面配置奖池/小票版式/Logo/标定/WiFi
 | 控制台 | **USB-Serial-JTAG** `/dev/cu.usbmodem1433101`（**会重枚举**，换口后先 `ls /dev/cu.*`） |
 | 板载 USB-UART 桥 | `/dev/cu.usbserial-*`（接 G43/G44，**禁止占用**） |
 | 串口读不到日志时 | 先 `python -m esptool --chip esp32s3 -p <PORT> run` 硬复位，再**立刻**读（启动日志只在前 1 秒） |
+| **设备"不可达"先查两件事** | ① **当前烧的是哪套固件**：跑完 `run_tests.py`（片上单测宿主）若不烧回主固件，设备**没有 Web、没有 STA 重连、控制台也不认 `wifi/rstbtn`**（日志里只有 `test_*.cc:PASS` + `Returned from app_main`）→ 表现就是"完全不可达"。② **开发机是否还在同一 WiFi**：本机曾漫游到别的网络（192.168.3.x）却一直在 ping 192.168.0.252。③ 打开串口若未显式 `dtr=False; rts=False`，会因拉了 EN/GPIO0 把芯片**带进下载模式**（应用停机、串口全静默）——`esptool run` 可复位回来 |
 
 ### 1.2 打印机（UART2）
 
@@ -92,6 +93,7 @@ TTL 热敏打印机出票；Web 页面配置奖池/小票版式/Logo/标定/WiFi
 | DMX512 | UART1：**TX=G17 / RX=G18 / DE=G4** |
 | 按钮 | **GPIO8**（active_high，短按抽奖 / 长按打自检页） |
 | IR 接收 | GPIO3（预留） |
+| **恢复默认配置按钮** | **GPIO5**（上拉输入、**按下为低**、**长按 5 秒**）→ 复位**网络**配置：热点名/密码(=12345678)/已保存网络/IP=DHCP；**开机 30 s 内忽略**；奖池/模板/标定**不动** |
 | **禁用引脚** | **G43/G44**（板上 TX0/RX0，接 USB-UART 桥）、**G19/G20**（USB D±） |
 | 默认机械参数 | 30 页、`step_speed=60`、`min_page_gap_dmx=8`、行程跨度 0..255 |
 | 抽奖时长模型 | `expected = 40 × (Σ⌈d/40⌉ − (延迟数−1))` ms（引擎同 tick 内推进，每个延迟少 1 tick）；n=18→4040ms / n=20→4400ms |
@@ -99,6 +101,43 @@ TTL 热敏打印机出票；Web 页面配置奖池/小票版式/Logo/标定/WiFi
 
 > 尚未完成真机验证的一环：**DMX 翻页落页是否与票面一致**、30 页标定可用性判据
 > （需接上执行器后用「标定」页逐页点动确认）。
+
+### 1.6 标定 = 「页码调整模式」（学习 page-player）
+
+| 项 | 值 |
+|---|---|
+| 数据模型 | **基础映射**（`PageMapping`，理论基准）+ **每页偏移**（`PageAdjust`，int8）；实际 DMX = `clamp(基础+偏移, 0, 255)` |
+| 持久化 | 偏移存 `/spiffs/page_adjust.json`；每次改动**立即落盘** |
+| 接口 | `GET /api/adjust`（offsets 二维 + mapping）、`PUT /api/adjust`（`{cell:0,page,offset}` → 返回 `{offset,base,value}`）、`POST /api/adjust/reset`（`{cell:0,page}` 清本页 / `{cell:-1}` 清全部）|
+| 界面 | `calibrate.html`：状态卡（当前页/基础值/偏移/实际值）+ ±10/±5/±1 微调（**只改偏移不翻页**）+ 上页/下页/首页/末页/跳页 + 清零；「高级：基础映射」折叠区保留整表编辑能力 |
+| 单机 | `cell_count` 恒为 1；接口保留 `cell` 字段与二维 `offsets` 形状，便于将来多机扩展 |
+| **点动已叠加偏移** | `Application::DirectDrive()` 用 `GetAdjustedValue(0,page)` —— 所以「微调 → 点动 → 眼睛确认」闭环成立 |
+| **`current_page` 不可用于标定** | `set_current_page` 只在**归零**路径写，`DirectDrive` 点动**不更新**它 → 标定界面的"当前页"必须用**界面本地游标**（加载时读一次作初值） |
+| 校验纪律 | `PUT /api/adjust` 必须显式校验（cell≠0 / page 越界 / offset 超出 -128..127 → 400）：`PageAdjust::SetOffset` 对越界是**静默忽略** |
+
+### 1.7 WiFi 进阶能力（学习 artnet-controller，2026-10-10）
+
+| 项 | 值 |
+|---|---|
+| 接口 | `PUT /api/wifi/ap`（改热点名 **和/或** 热点密码 `ap_pass`，空串=复原默认）· `PUT /api/wifi/ip`（`{dhcp:true}` 或 `{ip,netmask,gateway}`）· `POST /api/wifi/disconnect`（断开**保留凭据**）· `POST /api/wifi/reconnect`（用已保存凭据重连）· `POST /api/wifi/scan`（**启动异步扫描**）· `GET /api/wifi/scan`（轮询 `{running}` / `{done,aps[]}`） |
+| 持久化 | `ap_ssid`（空=默认 `lucky-page-XXXX`）· `ip_mode`（0=DHCP/1=静态）· `st_ip`/`st_mask`/`st_gw` |
+| 安全校验 | 掩码必须**连续 1**、网关必须与 IP **同网段**、网关≠本机 IP；热点名 1..31 字节且无控制字符/首尾空格（都是"配错就失联"的现场事故点）|
+| **断开要真的断** | `s_user_disconnected` 置位后退避任务**不再自动重连**，直到 `ApplySta`/`ReconnectSta` 或重启（否则 1 秒后就连回来，功能是假的）|
+| **扫描白名单不放松** | 异步扫描沿用 `WifiStaCanScan`：已连接时仍拒绝（会打断连接），提示语不变 |
+| **密码不回显 → 必须有 reconnect 接口** | 前端拿不到已保存密码，若无 `POST /api/wifi/reconnect`，"断开"在界面上就是**单向门**（只能靠串口救）|
+| **`esp_netif_ip_info_t` 是 lwIP 内部序** | 必须 `IP4_ADDR(&info.ip, o1,o2,o3,o4)`；直接赋 `ParseIpv4` 的"大端数值"会**字节反序**（真机事故：设完显示 252.0.168.192，若非热点兜底即失联）|
+| 串口兜底 | `wifi disc`/`wifi on`/`wifi ascan`/`wifi ap <名>`/`wifi ip <ip> <mask> <gw>`/`wifi dhcp`；`httptest [GET\|POST\|PUT\|DELETE] <path>`（**断开后只有本机 AP 可达，这是唯一的验证/救援通道**）|
+| **AP 密码可改**（用户要求）| 页面状态行「AP 密码」+「修改」内联编辑；`wifi appass <密码>` 串口改；校验 **8..63 字节**、无控制字符；**空串 = 复原默认 12345678**（不是开放网络，`authmode` 恒 WPA2）；立即生效且重启仍生效 |
+| **密码绝不回显**（强制规则 9）| HTTP 只回 `ap_pass_custom` 布尔、页面只显示"默认 12345678 / 已自定义（不显示）"、**启动日志不打明文**；三处断言锁定"响应/页面文本不含明文"；**串口 `wifi` 打印真实密码**（物理接触才是救援通道，页面文案里明示这条出路）|
+| 串口读**驱动**而非 Settings | `ApPasswordForConsole()` 用 `esp_wifi_get_config(WIFI_IF_AP)` 读当前生效值 —— "Settings 里有值" ≠ "驱动接受了"，只有读驱动才能验证真的应用上（改名/静态 IP 同理，验证时优先读设备实际状态）|
+| **G4 是 DMX DE，勿复用** | 恢复按钮原本要求用 G4，但它已是 `DMX512_DE_PIN`（输出、初始化拉高）→ 改用 **GPIO5**；新增功能脚必须先核对 §1.5 引脚表并加编译期 static_assert |
+| 网络复位范围 | `Settings::ResetNetworkConfig()` 只清 9 个网络字段；**用户数据（奖池/三模板/标定/计数/票号）有哨兵单测锁死不许碰**；按钮与 `wifi resetnet` 同一函数 |
+| **复位是真操作，别把自己的验证当事故** | 复位会按设计清掉网络配置；**验证复位功能的脚本必须自己负责恢复**（页面上重填最稳；串口连续 `wifi set` 会撞 `ESP_ERR_WIFI_STATE`，且可能让 STA 卡在"扫描返回 0 个 AP"，**重启即恢复**）。曾因为"脚本自己复位 + 恢复失败"而一路追查一个不存在的"神秘触发"——**先复盘自己的操作时间线，再怀疑硬件** |
+| **复位有持久化证据** | `network_reset.cc` 会写 `net_rst_cnt`/`net_rst_epoch`，WiFi 页显示"曾被恢复默认 N 次 + 最近时间"；配合**开机 30 s 守卫**与**按下/松开/长按日志**，以及串口 `rstbtn`/`rstmon [秒]` 引脚监视 —— 用于排查"没人按却被复位"这类无日志现象（曾有一次被我误判为神秘触发，实为**我自己的验证脚本**所清；现已有计数/时间/按键日志/引脚监视四重证据，5 分钟可定性）|
+| 凭据被清也能救回 | NVS 是**日志结构**：字段被覆盖前旧条目仍在。真机事故中就是用 `esptool read_flash 0x9000 0x4000` 读 NVS、提取明文 JSON 捞回两台已保存网络的 SSID 与明文密码（恢复时**低优先网络先 set**，保持原优先级顺序）。**凭据本身不写进仓库**：只记录方法与命令，真值留在设备 NVS，需要时按上述 `read_flash` 流程现场读取 |
+| **页面布局 = artnet 风格**（用户指定）| 页标题 + 卡片标题带下边框 + 状态行（标签左/加粗值右 + 「修改」小按钮）+ **通栏主操作按钮**（`.action-btn.primary/danger`）+ 居中空状态提示 + 内联编辑区（`.ip-edit-area`）；**保留本项目菜单与配色**，不采用 artnet 的 bottom tab 与配色 |
+| 宽度 | **6 页统一 `--w-page:760px`**；唯一例外是小票编辑页 `body.wide`（要与属性栏并排）。WiFi 页曾短暂用 480px 窄列（artnet 观感），用户要求"与其他页一致"后已取消 → **宽度例外必须显式枚举进断言**（`mobile_layout_check.py` 的 `WANT` 表 + `web_smoke.py` 真机复核），不能悄悄放宽 |
+| 风险操作验证纪律 | "真的断开一次""真的设静态 IP"这类会改变可达性的验证**走串口**，HTTP 只测校验负例与可逆项（改热点名只影响 AP 接口，安全）|
 
 ---
 
@@ -109,6 +148,8 @@ main/
   application.{h,cc}        启动编排、主线程调度（Schedule）、PrintTemplateForTest
   console_cmd.cc            串口命令（真机排障主力）
   settings.{h,cc}           数据驱动字段表（新增字段：加成员 + 字段表加一行）
+  wifi/wifi_manager.{h,cc}  AP+STA 管理、退避重连、异步扫描、断开/重连、热点改名、静态 IP
+  wifi/wifi_config.{h,cc}   纯函数层（凭据/热点名/IPv4 与静态 IP 校验、状态白名单、退避、JSON）
   printer/
     printer_uart.{h,cc}     UART 收发、纸尽探测、pdump 抓帧（**只保留最后 1024B**）
     printer_service.{h,cc}  打印任务（互斥+任务通知）、缺纸跳过、整帧日志
@@ -118,14 +159,24 @@ main/
     bmp_canvas.{h,cc}       位图画布（图形模式的"文字压图"能力，含点阵字库解析）
     logo_store.{h,cc}       素材独立分区读写（CRC 校验 + 从 SPIFFS 一次性迁移）
     printer_logo.cc         LGO1 校验、GS v 0 分块
-  web/web_server.{h,cc}     26+ 接口；`MainSync` 单层类型擦除投递主线程
+  web/web_server.{h,cc}     38 个接口（含标定 `/api/adjust` 与 WiFi 进阶 `/api/wifi/ap|ip|
+                            disconnect|reconnect|scan`）；
+                            `MainSync` 单层类型擦除投递主线程；`kMaxUriHandlers` 有 static_assert 护栏
+  page_mapping.{h,cc}       页码→DMX 基础映射（理论基准）
+  page_adjust.{h,cc}        每页 int8 行程**偏移**（实际值 = clamp(基础+偏移, 0, 255)）
   assets/spiffs_contents/   6 个页面（index/prizes/receipt/logo/calibrate/wifi）
+  assets/spiffs_contents/app.css  6 页统一样式（唯一来源）：
+                            §1 设计令牌（色板 + 尺度）→ §2 基础层（所有宽度：body/.card/h3/
+                            button/input/table/.note/.row）→ §3 导航 → §4 底栏 →
+                            §5 手机层（≤640px：44px 触控/16px 输入框/安全区/抽屉/宽表转卡片）
+  assets/spiffs_contents/app.js   共享脚本（按 URL 自动高亮当前页菜单，避免各页手写漂移）
   assets/font24.bin         点阵字库（EMBED 进固件，7542 字形/≈630KB）
 test_apps/                  单测宿主（独立分区表！见 §四-6）
 tools/gen_border.py         花纹边框素材生成
 tools/gen_font.py           点阵字库生成（`--gb2312` 全覆盖）
 scripts/api_verify.py       HTTP 接口验收（可复跑）
-scripts/web_smoke.py        前端浏览器冒烟（playwright）
+scripts/web_smoke.py        前端浏览器冒烟（playwright，含手机视口段）
+scripts/mobile_layout_check.py  手机布局离线校验（本地 mock，不需真机，出截图）
 ```
 
 ---
@@ -173,6 +224,103 @@ scripts/web_smoke.py        前端浏览器冒烟（playwright）
 12. **路径穿越防护**：静态文件拼接必须拒绝含 `..` 的请求（已加纯函数 + 单测）。
 13. **编辑器元素尺寸用 `minHeight`**：写死高度会裁字（大字要占 2 行、二维码按实际高度占位）。
 14. **SPIFFS 的 `rename` 不覆盖已存在目标** → 覆盖写必须先 `remove` 再 `rename`（否则"换个 logo 必失败"）。
+15. **前端改动必须跑手机视口校验**：`python3 scripts/mobile_layout_check.py`
+    （本地静态服务 + playwright mock `/api/**`，**不需要真机**）—— PC 布局肉眼看不出的
+    手机问题（横向溢出/触控太小/输入框触发 iOS 缩放）只有它能拦住；截图输出在 `/tmp/lucky-mobile/`。
+16. **手机端约定（改前端必须遵守，勿退回 PC 布局）**：
+    - **组件样式一律走 `app.css` 基础层，页面内联样式只写"页面特有"部分**。
+      曾因 6 页各写一份 `:root/body/.card/button/input` → PC 实测内容宽度 480/560/620/720/760/全宽、
+      卡片内距 6 种、按钮内距 6 种（用户反馈"各页风格不一致"）。
+      改组件外观 = 改 `app.css` 的令牌或基础层，**不要**在页面里重定义。
+      内容宽度统一 `--w-page:760px`；**唯一例外**是小票编辑页 `body.wide`（要与属性栏并排）。
+      例外必须**显式枚举进断言**（`mobile_layout_check.py` 的 `WANT` 表 + `web_smoke.py` 真机复核），
+      不能悄悄放宽；曾给 WiFi 页开过 480px 窄列，用户要求"与其他页一致"后取消。
+    - **一致性由探针断言锁定**：`mobile_layout_check.py` 往每个页面注入
+      `.card/h3/button/input` 探针并比对跨页计算样式 —— 不要改成"取页面第一个按钮"，
+      抽奖大圆按钮/标定微调大按钮/WiFi `.mini` 都是**有意的变体**，那样会误判。
+    - 6 个页面都在内联 `<style>` **之后**引入共享 `app.css`；移动端规则**全部**写在
+      `@media(max-width:640px)` 内 → 桌面端零影响。
+    - 页面**自身**的 `@media` 块必须放在该页样式表**末尾**（媒体查询不提升优先级，
+      放前面会被后面的基础规则盖掉 —— 本项目踩过：`#ruler` 隐藏失效、固定栏不生效）。
+    - 小票编辑页手机端：画布**默认适应宽度**（`fitCanvas()` 按可用宽度反算列宽）、
+      属性面板是**底部抽屉** `#panels`（点选元素滑出）、主操作是**底部固定栏** `.card.actions`
+      （复用同一批按钮，**不许复制 DOM** —— 否则冒烟测试的文本选择器会命中多个）。
+    - **抽屉绝不能盖住正在编辑的元素**（真机反馈过）：底部固定抽屉弹出后必须把选中元素
+      滚到抽屉上方可见带（`ensureSelectedVisible()`），且**只有轻点选中才弹抽屉、拖动时不弹**
+      （`pointerdown` 就弹会在手指下盖一层，连拖动都受影响）；抽屉打开时 `.layout`
+      追加 `padding-bottom:52vh`，否则最底部元素滚不上去。不变量已由两个校验脚本锁定。
+    - **"轻点"必须容忍真手指抖动**：真手指点一下必然带 1~3px 位移并产生 `pointermove`，
+      若把任何指针移动都当拖动，真机轻点就永远弹不出面板
+      （真机事故：面板点不出来）。判定阈值 `TAP_SLOP=6`，位移以按下点为基准。
+      **测试必须用 `jittery_tap()`（down→move 2px→up），`touchscreen.tap()` 不产生中间 move，
+      会绕过这条路径而假绿**。底栏另有「属性」按钮作保底入口，不依赖手势识别。
+    - **顶部菜单只有一个来源**：外观在共享 `app.css` 的 nav 段，**哪一项高亮由 `app.js`
+      按 URL 自动判定**（不在页面里手写 `class="on"`）。曾因 6 页各写一份 → 只有 2 页有高亮、
+      同一条链接 3 种文案（真机反馈"选中风格不一致"）。改菜单只需改 `app.css`/`app.js`。
+    - 桌面端 `colw=14/lineh=22` **不可自动改**：`web_smoke.py` 的拖动断言按
+      `28px=2 列 / 22px=1 行` 写死。
+    - 量纲基准用 `document.documentElement.clientWidth/clientHeight`，
+      **不要用 `window.innerWidth/innerHeight`**：手机模拟下会被 shrink-to-fit 放大
+      （实测 598×1295 vs 真实 390×844），会把"已溢出"判成正常。
+17. **回归脚本的清理必须"整体快照 → 整体还原"，禁止用 pop/猜测哪个是测试数据**。
+    `web_smoke.py` 曾在真机上**删掉真实模板块**：脚本中途切到 canvas 槽后 `blocks`
+    已换成 canvas 模板，此时 `blocks.pop()` 删的是真实块并把生效模式留在 canvas。
+    现在测试前快照 3 个槽 + 生效模式，结束时整体还原（生效槽最后写）再复载复核。
+18. **测试要能在真实数据上工作，离线 mock 必须包含"重叠元素"这类真实特征**：
+    `web_smoke.py` 的 `query_selector_all(".el")[0].click()` 在真机模板上超时——
+    元素重叠被上层拦截；离线 mock 模板太简单，掩盖了它。
+    现用 `clickable_el_index()`（`document.elementFromPoint` 找真正可点元素）。
+    **轻点类断言一律用 `jittery_tap()`**（见 §四-16）；`touchscreen.tap()` 只用于
+    需要"干净触摸事件"的场合，不能单独代表真手指轻点。
+19. **设备数据不是测试夹具：回归前确认没人在编辑，还原前先问**。
+    回归脚本会"快照 → 测试 → 还原"模板，**与用户手机上的手工编辑并发时会互相覆盖**
+    （真实事故：曾把"模板与备份不一致"误判成脚本写坏，用备份还原，
+    可能覆盖了用户当时的编辑；实际差异是用户自己改的 —— 两次差异内容各不相同、
+    都是语义明确的人工编辑，而逐步隔离复测证明代码路径零写入）。
+    另外：只比"块数/元素数"会漏掉字段级漂移，故 `web_smoke.py` 结束时对
+    **三个槽逐块**与**本次运行开始时**的快照比对（语义是"本次运行期间不得漂移"，
+    不是"设备必须等于我的备份"）。
+20. **新增 URI 路由必须核对"注册条数 vs `max_uri_handlers`"**。
+    httpd 超限时是**静默注册失败**：后注册的通配静态路由 `/*` 不生效 →
+    **所有静态页面 404 "Nothing matches the given URI"**，而 API 全部正常
+    （极易误判成 SPIFFS 坏了。真机事故：加 3 条 `/api/adjust` 后 31+2=33 > 32 顶破）。
+    现已有 `kMaxUriHandlers` + **编译期 static_assert**（再加路由会直接编译不过），
+    启动日志也会打 `路由注册完成：N/M 条`，不完整时 `ESP_LOGE` 明确提示。
+    → 加路由后若页面 404，**先看启动日志这两行**，别急着怀疑 SPIFFS。
+21. **新增测试文件后必须 `idf.py -B build reconfigure`**。
+    `test_apps/main/CMakeLists.txt` 用 `file(GLOB ...)`，CMake 只在 configure 时求值 →
+    只 `build` 不会收集新测试文件（真机事故：加了 7 个 PageAdjust 单测后仍显示 240 PASSED，
+    与改造前一样）。**测试数与预期不符时必须停下核对**，不能把"数字没变"当通过。
+
+22. **会改变"可达性"的验证必须走串口兜底通道，且先准备好救援手段**。
+    断开 WiFi / 改静态 IP 这类操作会让设备**离开你能访问它的那条链路**
+    （真机实测：`POST /api/wifi/disconnect` 后主机立刻不可达）。
+    因此：① 先实现并验证救援命令（`wifi on`、`httptest [METHOD] <path>` 走本机 AP 192.168.4.1）；
+    ② 风险操作只在串口做；③ HTTP 侧只测**校验负例**与**可逆项**；
+    ④ 每次验证完必须核对设备已复原（热点名/IP 模式/连接状态/已保存网络/模板/偏移）。
+23. **`esp_netif_ip_info_t` 是 lwIP 内部字节序**：必须 `IP4_ADDR(&info.ip, o1,o2,o3,o4)`。
+    把 `ParseIpv4` 解析出的"大端数值"直接赋给 `.addr` 会**字节反序**
+    （真机事故：静态 IP 显示成 252.0.168.192）。同类"看起来对、实际反序"的坑，
+    靠**真机读回显示值**才能发现 —— 单测覆盖不到（纯函数是对的，错在赋值方式）。
+
+24. **多字段可选参数的 handler 不能用"前一步的 ok"做后一步的门禁**。
+    真机事故：`PUT /api/wifi/ap` 支持 `ap_ssid` 与 `ap_pass` 二选一，写成
+    `if (has_ssid) ok = SetApSsid(...); if (ok && has_pass) ok = SetApPassword(...);` →
+    **只传密码时 `ok` 保持初值 false，密码那步被跳过并整体返回 400**。
+    正确写法：`if (has_ssid && !A(...)) return; if (has_pass && !B(...)) return; ok = true;`
+    —— `ok` 的语义是"**所有被请求的操作都成功**"，不是"前面成功了"。
+
+
+25. **异步事件处理器不得抢走同步路径的驱动资源**。
+    真机事故：为"异步扫描"新增的 `WIFI_EVENT_SCAN_DONE` 处理器**无条件**调用
+    `esp_wifi_scan_get_ap_records()`；而**同步** `Scan()`（`esp_wifi_scan_start(blocking=true)`）
+    也会收到同一事件 → 事件任务先把结果取走，同步路径只剩 0 个网络
+    （串口 `wifi scan` 从此"永远扫描不到任何 AP"，看起来像硬件坏了）。
+    修法：加"这次是不是**我自己**发起的异步操作"标志（`s_scan_async_pending`），
+    只有自己发起时才在事件里消费结果；别人的事件只复位状态。
+    → 通用原则：**共享的驱动资源（扫描结果、DMA 缓冲、事件队列）在事件处理器里必须先判断
+    "这事件是不是我触发的"再消费。**
+
 
 ---
 
@@ -182,10 +330,16 @@ scripts/web_smoke.py        前端浏览器冒烟（playwright）
 |---|---|---|
 | 编译 | `bash scripts/build.sh s3` | `Project build complete` |
 | 片上单测 | `cd test_apps && idf.py -B build -p $PORT flash` + 读串口 | **全 PASS / 0 FAIL**，且**单次启动无重启** |
-| HTTP 验收 | `python3 scripts/api_verify.py <设备IP>` | 全通过（含负例：坏 JSON→400、路径穿越→302） |
+| HTTP 验收 | `python3 scripts/api_verify.py <设备IP>` | 全通过（含负例：坏 JSON→400、路径穿越→302）；**默认不出纸** |
 | 前端冒烟 | `python3 scripts/web_smoke.py <设备IP>` | 6 页面无 JS 异常 + 画布交互全通过 |
 | 真机打印 | 串口 `psample` | `整帧 N 字节（logo 已包含）` + `打印完成 (ok=1 fail=0)` |
 | 纸面 | **人眼确认** | 版式/字迹/二维码正确（自动化验证不到的只有这一项） |
+
+> **默认不跑会真出纸的用例**（用户要求：除非明确要求，否则排除实际打印）：
+> `api_verify.py` 里的 `POST /api/printer/test`（真出纸）需显式 `--with-print`，
+> 抽奖全链路 `POST /api/draw`（会转页 + 出票）需显式 `--draw`；默认只做**只读**的
+> `GET /api/status` 打印机状态检查。脚本结束会打印「本次跳过」清单，避免"以为验了其实没验"。
+> 新增任何会物理出纸/出票的用例，一律走"默认跳过 + 参数显式开启"，不要直接塞进默认路径。
 
 > **跑完片上单测必须把主固件整包烧回**（测试宿主的分区表没有 assets 分区，
 > 否则主固件会因找不到 SPIFFS 重启——虽然代码已改成降级不 abort，仍应烧回）。
@@ -219,7 +373,9 @@ pdump        # 最近一帧十六进制（**只保留最后 1024B**，大图看�
 psample      # 按**当前保存的版式**打一张
 pdemo 1..6   # 装演示版式（1 经典 2 简洁 3 促销 4 并排 5 水印 6 花边）
 ptmpl <json> # 直接装模板（注意：串口行缓冲小，长 JSON 会被截断）
-preceipt ptime prizes gbtest wifi [scan|set|off] httptest <path>
+preceipt ptime prizes gbtest
+wifi [scan|ascan|set <ssid> <pass>|off|disc|on|ap <名>|appass <密码>|ip ...|dhcp]
+httptest [GET|POST|PUT|DELETE] <path>   # 板内自测；断开后唯一通道
 ```
 
 ---

@@ -2,37 +2,33 @@
 <html lang="zh-CN">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <title>幸运翻页机</title>
 <style>
-:root{--p:#e8433f;--g:#2ecc71;--w:#f39c12;--bg:#1a1a2e;--card:#16213e;--tx:#eee}
-*{box-sizing:border-box;margin:0;padding:0}
-body{font-family:system-ui,-apple-system,sans-serif;background:var(--bg);color:var(--tx);padding:16px;max-width:480px;margin:0 auto}
-nav{display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap}
-nav a{color:#8ab4ff;text-decoration:none;font-size:13px;padding:6px 10px;background:var(--card);border-radius:6px}
-.card{background:var(--card);border-radius:12px;padding:20px;margin-bottom:14px;text-align:center}
+/* 页面特有样式；通用组件（body/.card/button/input/.note/.row…）统一走 app.css 基础层 */
+.card{text-align:center}                 /* 抽奖页卡片内容居中 */
 #state{font-size:14px;margin-bottom:12px}
 #state .dot{display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:6px;vertical-align:middle}
 .st-idle .dot{background:var(--g)}.st-spinning .dot,.st-printing .dot{background:var(--w);animation:pulse 1s infinite}
 .st-homing .dot,.st-boot .dot{background:var(--w);animation:pulse 2s infinite}
 .st-homing_failed .dot,.st-out_of_prizes .dot{background:var(--p)}
 @keyframes pulse{50%{opacity:.3}}
+/* 抽奖大按钮：形状是页面特例，颜色/字重沿用统一令牌 */
 #draw{width:200px;height:200px;border-radius:50%;border:none;background:var(--p);color:#fff;font-size:32px;font-weight:bold;cursor:pointer;transition:transform .1s;box-shadow:0 8px 30px rgba(232,67,63,.4)}
 #draw:active{transform:scale(.95)}
 #draw:disabled{background:#555;cursor:not-allowed;box-shadow:none}
 #last{margin-top:14px;font-size:15px;line-height:1.8}
 #last .prize{font-size:26px;font-weight:bold;color:#ffd700}
 .stats{display:flex;justify-content:center;gap:24px;margin-top:12px;font-size:13px;color:#aaa}
-button.mini{background:#334;padding:8px 14px;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:13px;margin-top:10px}
-.fault{background:#5c1a1a;border:1px solid var(--p);border-radius:8px;padding:10px;margin-bottom:12px;display:none;font-size:13px}
+.fault{background:#5c1a1a;border:1px solid var(--p);border-radius:var(--r-ctl);padding:10px;margin-bottom:12px;display:none;font-size:13px}
 @keyframes roll{0%{transform:rotate(0)}100%{transform:rotate(360deg)}}
-#draw.rolling{background:#c0392b;animation:roll 1.2s linear infinite}
+#draw.rolling{background:var(--p-dark);animation:roll 1.2s linear infinite}
 </style>
+<!-- 移动端统一样式（安全区/44px 触控/16px 输入框/固定操作栏）：必须在各页内联样式之后 -->
+<link rel="stylesheet" href="app.css">
 </head>
 <body>
-<nav>
-<a href="/index.html">抽奖</a><a href="/prizes.html">奖池</a><a href="/receipt.html">小票</a><a href="/logo.html">Logo</a><a href="/calibrate.html">标定</a><a href="/wifi.html">WiFi</a>
-</nav>
+<nav><a href="/index.html">抽奖</a><a href="/prizes.html">奖池</a><a href="/receipt.html">小票</a><a href="/logo.html">Logo</a><a href="/calibrate.html">标定</a><a href="/wifi.html">WiFi</a></nav>
 <div class="fault" id="fault">⚠ 打印机异常：请检查纸张与连线（连续失败 ≥3 次）</div>
 <div class="card">
   <div id="state"><span class="dot"></span><span id="stateText">连接中…</span></div>
@@ -77,5 +73,6 @@ function draw(){
 function testTicket(){fetch('/api/printer/test',{method:'POST'})}
 poll();setInterval(poll,1000);
 </script>
+<script src="app.js"></script>
 </body>
 </html>
