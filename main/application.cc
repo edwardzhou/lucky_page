@@ -147,6 +147,33 @@ void Application::InitPrinter() {
     }
 }
 
+Application::ResetPinTrace Application::ResetPinTraceSnapshot() const {
+    ResetPinTrace tr;
+    tr.edges = reset_pin_edges_;
+    tr.low_ms_total = reset_pin_low_ms_;
+    tr.last_edge_ms = reset_pin_last_edge_ms_;
+    tr.last_level = reset_pin_last_level_;
+    return tr;
+}
+
+void Application::ResetPinSample(void* arg) {
+    auto* self = static_cast<Application*>(arg);
+    const int lv = gpio_get_level(RESET_BUTTON_GPIO);
+    if (lv == 0) {
+        self->reset_pin_low_ms_ += 10;   // 周期 10 ms
+    }
+    if (lv != self->reset_pin_last_level_) {
+        ++self->reset_pin_edges_;
+        self->reset_pin_last_edge_ms_ = esp_timer_get_time() / 1000;
+        // 变低 = 疑似按下（要做复位的正是这种），用 W 级；变高 = 松开，I 级
+        ESP_LOGW(TAG, "GPIO%d 电平变化 %d→%d（开机 %lld ms，累计跳变 %d 次，累计低电平 %lld ms）",
+                 (int)RESET_BUTTON_GPIO, self->reset_pin_last_level_, lv,
+                 (long long)self->reset_pin_last_edge_ms_, self->reset_pin_edges_,
+                 (long long)self->reset_pin_low_ms_);
+        self->reset_pin_last_level_ = lv;
+    }
+}
+
 Application::ButtonStats Application::ButtonStatsSnapshot() const {
     ButtonStats st;
     st.draw_accepted = draw_gate_.accepted();
@@ -232,6 +259,23 @@ void Application::InitButton() {
     });
     ESP_LOGI(TAG, "[6/7] 恢复按钮就绪 (GPIO%d, active_low, 长按 %d ms)",
              RESET_BUTTON_GPIO, RESET_BUTTON_LONG_MS);
+
+    // GPIO5 黑匣子：常驻采样，任何一次电平跳变都留日志 + 计数（排查无接触复位的关键证据）
+    {
+        esp_timer_create_args_t args = {};
+        args.callback = &Application::ResetPinSample;
+        args.arg = this;
+        args.dispatch_method = ESP_TIMER_TASK;
+        args.name = "rst_pin";
+        args.skip_unhandled_events = false;
+        if (esp_timer_create(&args, &reset_pin_timer_) == ESP_OK) {
+            esp_timer_start_periodic(reset_pin_timer_, 10 * 1000);   // 10 ms
+            ESP_LOGI(TAG, "GPIO%d 引脚黑匣子已启动（10 ms 采样，跳变即留证据）",
+                     (int)RESET_BUTTON_GPIO);
+        } else {
+            ESP_LOGW(TAG, "引脚黑匣子启动失败（仅影响取证，不影响功能）");
+        }
+    }
 }
 
 bool Application::PrintTemplateForTest(const ReceiptTemplateV3& tmpl) {

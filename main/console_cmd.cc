@@ -558,7 +558,10 @@ static void CmdRstBtn() {
         const int phantom = app.ResetPhantomRejects();
         printf("  幽灵长按拒绝次数=%d%s\n", phantom,
                phantom ? "（有驱动误报！看日志里的 E App 行）" : "（无）");
-        printf("  可信性要求: 见过按下事件 + 引脚连续 8 次采样全为低 + 已过开机守卫\n");
+        printf("  可信性要求: 见过按下事件 + 引脚连续 8 次采样全为低 + 已过开机守卫\n");        const auto tr = app.ResetPinTraceSnapshot();
+        printf("  引脚黑匣子: 累计跳变=%d 次，累计低电平=%lld ms，最近跳变=%lld ms，当前电平=%d\n",
+               tr.edges, (long long)tr.low_ms_total, (long long)tr.last_edge_ms, tr.last_level);
+        printf("  （若无按键操作却看到跳变>0，说明引脚被电气干扰拉低过 —— 看日志的 W App 行）\n");
     }
 }
 

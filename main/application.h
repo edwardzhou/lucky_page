@@ -39,6 +39,16 @@ public:
     /// 复位手势被判为不可信（幽灵长按）而拒绝的次数 —— 排查无接触复位用
     int ResetPhantomRejects() const { return reset_phantom_rejects_; }
 
+    /// GPIO5（恢复按钮）引脚黑匣子：常驻 10 ms 采样，记录每次电平跳变与累计低电平时长。
+    /// 用途：下次再出现"无人接触却复位"时，能直接回答"引脚究竟有没有被拉低过"。
+    struct ResetPinTrace {
+        int edges = 0;            ///< 电平跳变次数（上电以来）
+        int64_t low_ms_total = 0; ///< 累计处于低电平的毫秒数
+        int64_t last_edge_ms = -1;///< 最近一次跳变时刻（-1=从未）
+        int last_level = 1;       ///< 当前/最近一次采样电平
+    };
+    ResetPinTrace ResetPinTraceSnapshot() const;
+
     void Start();
 
     /// 跨线程调度到主线程（线程安全）
@@ -88,6 +98,14 @@ private:
     // 真机现象（2026-10-11）：无人接触时跑过一次网络复位，故加这两道证据闸门。
     int64_t reset_press_down_ms_ = -1;   ///< 最近一次按下事件时刻（-1=从未）
     int reset_phantom_rejects_ = 0;      ///< 被判为幽灵长按而拒绝的次数
+
+    // GPIO5 引脚黑匣子（10 ms 周期采样；采样函数在 esp_timer 上下文，只做读+计数）
+    static void ResetPinSample(void* arg);
+    esp_timer_handle_t reset_pin_timer_ = nullptr;
+    int reset_pin_last_level_ = 1;
+    int reset_pin_edges_ = 0;
+    int64_t reset_pin_low_ms_ = 0;
+    int64_t reset_pin_last_edge_ms_ = -1;
 
     // ---- Schedule 机制（mutex + deque + event group） ----
     std::deque<std::function<void()>> schedule_queue_;
