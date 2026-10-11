@@ -1,0 +1,31 @@
+dependencies:
+  espressif/button:
+    dependencies: []
+    source:
+      path: ../managed_components/espressif__button
+      type: local
+    version: 4.2.1
+  espressif/cjson:
+    dependencies: []
+    source:
+      path: ../managed_components/espressif__cjson
+      type: local
+    version: 1.7.19~2
+  espressif/cmake_utilities:
+    dependencies: []
+    source:
+      path: ../managed_components/espressif__cmake_utilities
+      type: local
+    version: 1.1.1
+  idf:
+    source:
+      type: idf
+    version: 6.1.0
+direct_dependencies:
+- espressif/button
+- espressif/cjson
+- espressif/cmake_utilities
+- idf
+manifest_hash: 3df0f4e9159b8f8eedcf668732e37940f64026abcded9abd9a78ef53c994f70a
+target: esp32s3
+version: 3.0.0
