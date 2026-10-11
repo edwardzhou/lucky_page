@@ -194,18 +194,41 @@ void Application::InitButton() {
     // ⚠ 开机守卫：复位会清掉已保存的 WiFi 凭据，代价高，
     // 因此**开机后 30 秒内一律忽略**该按键 —— 万一上电瞬间引脚电平不稳
     // 被驱动当成"一直按住"，也不会在第一分钟内把用户网络配置抹掉。
-    reset_button_->OnPress([this]() { ESP_LOGI(TAG, "恢复按钮按下（需持续 %d ms）", RESET_BUTTON_LONG_MS); });
+    // 记录"我们亲眼见过按下事件"的时刻 —— 幽灵长按（驱动误报）不会有这一步
+    reset_button_->OnPress([this]() {
+        reset_press_down_ms_ = esp_timer_get_time() / 1000;
+        ESP_LOGI(TAG, "恢复按钮按下（需持续 %d ms，开机 %lld ms）", RESET_BUTTON_LONG_MS,
+                 (long long)reset_press_down_ms_);
+    });
     reset_button_->OnRelease([this]() { ESP_LOGI(TAG, "恢复按钮松开"); });
     reset_button_->OnLongPress([this]() {
-        const int64_t elapsed_ms = esp_timer_get_time() / 1000;
-        if (elapsed_ms < kResetButtonBootGuardMs) {
-            ESP_LOGW(TAG, "恢复按钮长按被忽略：开机仅 %lld ms（< 守卫 %d ms）", (long long)elapsed_ms,
-                     kResetButtonBootGuardMs);
+        // 多点采样引脚电平：只有**连续全部为低**才算真的按着（挡掉电平回弹/抖动）
+        constexpr int kSamples = 8;
+        int low = 0;
+        for (int i = 0; i < kSamples; ++i) {
+            low += (gpio_get_level(RESET_BUTTON_GPIO) == 0) ? 1 : 0;
+            vTaskDelay(pdMS_TO_TICKS(10));
+        }
+        ResetGestureInput in;
+        in.boot_ms = esp_timer_get_time() / 1000;
+        in.press_down_ms = reset_press_down_ms_;
+        in.all_samples_low = (low == kSamples);
+        in.sample_count = kSamples;
+        const ResetGestureDecision d =
+            DecideResetGesture(in, RESET_BUTTON_LONG_MS, kResetButtonBootGuardMs);
+        if (d != ResetGestureDecision::kAccept) {
+            ++reset_phantom_rejects_;
+            // 误报要显眼：这类日志是"没人按却被复位"的唯一现场线索
+            ESP_LOGE(TAG,
+                     "恢复按钮长按**未通过可信性判定**（第 %d 次）→ %s"
+                     "［开机 %lld ms，按下事件于 %lld ms，低电平采样 %d/%d］",
+                     reset_phantom_rejects_, ResetGestureDecisionText(d), (long long)in.boot_ms,
+                     (long long)in.press_down_ms, low, kSamples);
             return;
         }
-        ESP_LOGW(TAG, "恢复按钮长按 %d ms（开机 %lld ms）→ 复位网络配置",
-                 RESET_BUTTON_LONG_MS, (long long)elapsed_ms);
-        Schedule([this]() { ResetNetworkConfigToDefault(); });
+        ESP_LOGW(TAG, "恢复按钮长按通过判定（开机 %lld ms，按下于 %lld ms，低电平 %d/%d）→ 复位网络配置",
+                 (long long)in.boot_ms, (long long)in.press_down_ms, low, kSamples);
+        Schedule([this]() { ResetNetworkConfigToDefault("恢复按钮长按 5 秒"); });
     });
     ESP_LOGI(TAG, "[6/7] 恢复按钮就绪 (GPIO%d, active_low, 长按 %d ms)",
              RESET_BUTTON_GPIO, RESET_BUTTON_LONG_MS);

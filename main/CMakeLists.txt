@@ -18,6 +18,7 @@ idf_component_register(
         "settings.cc"
         "network_reset.cc"
         "button_gate.cc"
+        "reset_gesture.cc"
         "nvs_saver.cc"
         "page_mapping.cc"
         "page_adjust.cc"

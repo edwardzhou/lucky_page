@@ -10,6 +10,7 @@
 /// ⚠ 绝不触碰用户数据（奖池、三种小票模板、标定偏移、计数…）；该不变量有单测锁死。
 /// 在 esp_timer 回调里**不可直接调用**（内部会写 NVS + 操作 WiFi），
 /// 必须先 Schedule 到主线程。
-bool ResetNetworkConfigToDefault();
+/// @param origin 触发来源（写进日志，供事后取证区分按钮/串口/其它入口）
+bool ResetNetworkConfigToDefault(const char* origin = "未知来源");
 
 #endif  // _NETWORK_RESET_H_

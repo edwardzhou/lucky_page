@@ -416,7 +416,7 @@ static void CmdWifi(const char* arg) {
     }
     // wifi resetnet —— **与硬件恢复按钮同一条代码路径**（按钮长按 5 秒调用它）
     if (strncmp(arg, "resetnet", 8) == 0) {
-        ResetNetworkConfigToDefault();
+        ResetNetworkConfigToDefault("串口 wifi resetnet");
         printf("已恢复网络默认配置（热点名/密码 + 已保存网络 + DHCP）；用户数据未改动\n");
         return;
     }
@@ -553,7 +553,13 @@ static void CmdRstBtn() {
     gpio_config(&io);
     printf("恢复按钮: GPIO%d active_low 长按 %d ms\n", (int)RESET_BUTTON_GPIO, RESET_BUTTON_LONG_MS);
     printf("  当前电平=%d（1=未按下/上拉正常，0=正在按下）\n", gpio_get_level(RESET_BUTTON_GPIO));
-    printf("  触发动作: 复位网络配置（等价于 wifi resetnet）\n");
+    printf("  触发动作: 复位网络配置（等价于 wifi resetnet）\n");    {
+        auto& app = Application::GetInstance();
+        const int phantom = app.ResetPhantomRejects();
+        printf("  幽灵长按拒绝次数=%d%s\n", phantom,
+               phantom ? "（有驱动误报！看日志里的 E App 行）" : "（无）");
+        printf("  可信性要求: 见过按下事件 + 引脚连续 8 次采样全为低 + 已过开机守卫\n");
+    }
 }
 
 // httptest [path] —— 设备自己向本机 WebServer 发 HTTP 请求（无需外部网络，

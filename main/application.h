@@ -12,6 +12,7 @@
 
 #include "boards/common/button.h"
 #include "button_gate.h"
+#include "reset_gesture.h"
 #include "dmx512/dmx512_service.h"
 #include "lottery/lottery_controller.h"
 #include "lottery/prize_pool.h"
@@ -34,6 +35,9 @@ public:
         int64_t draw_last_ms = -1;
     };
     ButtonStats ButtonStatsSnapshot() const;
+
+    /// 复位手势被判为不可信（幽灵长按）而拒绝的次数 —— 排查无接触复位用
+    int ResetPhantomRejects() const { return reset_phantom_rejects_; }
 
     void Start();
 
@@ -79,6 +83,11 @@ private:
     // 按钮触发闸门：软件去抖 + 限流（抽奖与打自检页各一个，互不饿死）
     ButtonGate draw_gate_{BUTTON_MODULE_DEBOUNCE_MS, BUTTON_MODULE_COOLDOWN_MS};
     ButtonGate testpage_gate_{BUTTON_MODULE_DEBOUNCE_MS, BUTTON_MODULE_COOLDOWN_MS};
+
+    // 恢复按钮（GPIO5）：只有「我们亲眼见过按下事件 + 引脚多点采样确为低电平」才允许复位。
+    // 真机现象（2026-10-11）：无人接触时跑过一次网络复位，故加这两道证据闸门。
+    int64_t reset_press_down_ms_ = -1;   ///< 最近一次按下事件时刻（-1=从未）
+    int reset_phantom_rejects_ = 0;      ///< 被判为幽灵长按而拒绝的次数
 
     // ---- Schedule 机制（mutex + deque + event group） ----
     std::deque<std::function<void()>> schedule_queue_;
