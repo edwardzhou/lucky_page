@@ -1,5 +1,7 @@
 #include "application.h"
 
+#include "esp_timer.h"
+
 #include "network_reset.h"
 
 #include "printer/logo_store.h"
@@ -145,10 +147,29 @@ void Application::InitPrinter() {
     }
 }
 
+Application::ButtonStats Application::ButtonStatsSnapshot() const {
+    ButtonStats st;
+    st.draw_accepted = draw_gate_.accepted();
+    st.draw_debounce = draw_gate_.rejected_debounce();
+    st.draw_cooldown = draw_gate_.rejected_cooldown();
+    st.draw_last_ms = draw_gate_.last_trigger_ms();
+    st.page_accepted = testpage_gate_.accepted();
+    st.page_debounce = testpage_gate_.rejected_debounce();
+    st.page_cooldown = testpage_gate_.rejected_cooldown();
+    return st;
+}
+
 void Application::InitButton() {
-    // 高电平按钮模块（沿用 page-player：按下=HIGH）；回调在 esp_timer 上下文 → Schedule
-    module_button_ = std::make_unique<Button>(BUTTON_MODULE_GPIO, 1);
+    // 抽奖按钮：**低电平触发**（上拉 + 按下接地）；回调在 esp_timer 上下文 → Schedule
+    module_button_ = std::make_unique<Button>(BUTTON_MODULE_GPIO, BUTTON_MODULE_ACTIVE_LEVEL);
+    // 去抖 + 限流（1 秒一次）在闸门里做：esp_button 4.x 没有可配的去抖参数
     module_button_->OnPress([this]() {
+        const int64_t now_ms = esp_timer_get_time() / 1000;
+        if (!draw_gate_.OnPress(now_ms)) {
+            ESP_LOGD(TAG, "抽奖按钮忽略（去抖 %d 次 / 限流 %d 次）",
+                     draw_gate_.rejected_debounce(), draw_gate_.rejected_cooldown());
+            return;
+        }
         Schedule([this]() {
             if (!controller_->Trigger()) {
                 ESP_LOGW(TAG, "按钮触发被拒绝（状态 %s）", controller_->StateName());
@@ -156,9 +177,16 @@ void Application::InitButton() {
         });
     });
     module_button_->OnLongPress([this]() {
+        const int64_t now_ms = esp_timer_get_time() / 1000;
+        if (!testpage_gate_.OnPress(now_ms)) {
+            ESP_LOGD(TAG, "长按打自检页忽略（去抖/限流）");
+            return;
+        }
         Schedule([this]() { PrintTestTicket(); });
     });
-    ESP_LOGI(TAG, "[6/7] 抽奖按钮就绪 (GPIO%d, active_high)", BUTTON_MODULE_GPIO);
+    ESP_LOGI(TAG, "[6/7] 抽奖按钮就绪 (GPIO%d, %s, 去抖 %d ms, 限流 %d ms)", BUTTON_MODULE_GPIO,
+             BUTTON_MODULE_ACTIVE_LEVEL == 0 ? "active_low/按下=0" : "active_high/按下=1",
+             BUTTON_MODULE_DEBOUNCE_MS, BUTTON_MODULE_COOLDOWN_MS);
 
     // 恢复默认配置按钮：上拉输入、按下为低电平、长按 5 秒 → 复位**网络**配置。
     // 回调在 esp_timer 上下文（禁止阻塞/写 NVS）→ 必须 Schedule 到主线程。

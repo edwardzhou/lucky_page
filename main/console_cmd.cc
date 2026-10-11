@@ -484,6 +484,7 @@ static void CmdWifi(const char* arg) {
     printf("        wifi disc（断开留凭据）| wifi on（重连）| wifi ascan（异步扫描）\n");
     printf("        wifi ap <名> | wifi appass <密码> | wifi resetnet（= 长按恢复按钮）\n");
     printf("        wifi ip <ip> <mask> <gw> | wifi dhcp     rstbtn | rstmon [秒]（引脚监视）\n");
+    printf("        btbtn（抽奖按钮自检：触发电平/去抖/限流/当前电平/统计）\n");
 }
 
 // rstmon [秒] —— 监视恢复按钮引脚电平变化（排查"没人按却被触发"）
@@ -515,6 +516,32 @@ static void CmdRstMon(const char* arg) {
     }
     printf("监视结束：变化 %d 次，下降沿 %d 次（0 = 该引脚全程稳定，没人按也没被拉低）\n", changes,
            lows);
+}
+
+// btbtn —— 抽奖按钮自检：触发电平/去抖/限流/**当前电平** + 闸门统计
+// 用途：现场确认接线的触发电平（上拉未按下应为 1），并按一下看计数变化
+// ——**不需要真的出票**就能确认按钮与去抖/限流是否生效。
+static void CmdBtBtn() {
+    const Application::ButtonStats st = Application::GetInstance().ButtonStatsSnapshot();
+    gpio_config_t io = {};
+    io.pin_bit_mask = (1ULL << BUTTON_MODULE_GPIO);
+    io.mode = GPIO_MODE_INPUT;
+    io.pull_up_en = (BUTTON_MODULE_ACTIVE_LEVEL == 0) ? GPIO_PULLUP_ENABLE : GPIO_PULLUP_DISABLE;
+    io.pull_down_en = (BUTTON_MODULE_ACTIVE_LEVEL == 0) ? GPIO_PULLDOWN_DISABLE : GPIO_PULLDOWN_ENABLE;
+    gpio_config(&io);
+    const int lv = gpio_get_level(BUTTON_MODULE_GPIO);
+    printf("抽奖按钮: GPIO%d %s 去抖 %d ms 限流 %d ms\n", (int)BUTTON_MODULE_GPIO,
+           BUTTON_MODULE_ACTIVE_LEVEL == 0 ? "active_low（按下=0）" : "active_high（按下=1）",
+           BUTTON_MODULE_DEBOUNCE_MS, BUTTON_MODULE_COOLDOWN_MS);
+    printf("  当前电平=%d（%s）\n", lv,
+           BUTTON_MODULE_ACTIVE_LEVEL == 0 ? (lv ? "未按下/上拉正常" : "正在按下或被拉低")
+                                           : (lv ? "正在按下" : "未按下"));
+    printf("  闸门统计: 抽奖 接受 %d / 去抖吞 %d / 限流忽略 %d%s", st.draw_accepted,
+           st.draw_debounce, st.draw_cooldown,
+           st.draw_last_ms >= 0 ? "" : "（尚未触发过）\n");
+    if (st.draw_last_ms >= 0) printf("，上次接受于开机 %lld ms\n", (long long)st.draw_last_ms);
+    printf("  自检 接受 %d / 去抖吞 %d / 限流忽略 %d\n", st.page_accepted, st.page_debounce,
+           st.page_cooldown);
 }
 
 // rstbtn —— 恢复按钮自检：引脚号/有效电平/长按阈值/**当前电平**（上拉未按下应为 1）
@@ -709,6 +736,7 @@ static void ConsoleTask(void*) {
         else if (strncmp(line, "ptime ", 6) == 0) CmdPtime(line + 6);
         else if (strncmp(line, "wifi", 4) == 0) CmdWifi(line[4] ? line + 5 : "");
         else if (strncmp(line, "rstbtn", 6) == 0) CmdRstBtn();
+        else if (strncmp(line, "btbtn", 5) == 0) CmdBtBtn();
         else if (strncmp(line, "rstmon", 6) == 0) CmdRstMon(line[6] ? line + 7 : "");
         else if (strncmp(line, "httptest", 8) == 0) CmdHttpTest(line[8] ? line + 9 : "");
         else if (strncmp(line, "pbg", 3) == 0) CmdBgTest(line[3] ? line + 4 : "");

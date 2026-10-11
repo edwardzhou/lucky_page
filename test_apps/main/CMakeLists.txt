@@ -33,6 +33,7 @@ set(DWPRINTER_SOURCES
 )
 
 set(MAIN_SOURCES
+    "${MAIN_DIR}/button_gate.cc"
     "${MAIN_DIR}/settings.cc"
     "${MAIN_DIR}/page_mapping.cc"
     "${MAIN_DIR}/page_adjust.cc"

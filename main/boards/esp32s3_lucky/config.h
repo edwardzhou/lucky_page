@@ -51,8 +51,18 @@ static_assert(PRINTER_RX_PIN != GPIO_NUM_19 && PRINTER_RX_PIN != GPIO_NUM_20,
               "打印机 RX 禁止占用 G19/G20（USB D-/D+）");
 static_assert(PRINTER_TX_PIN != PRINTER_RX_PIN, "打印机 TX/RX 不能同脚");
 
-// ===== 抽奖按钮（高电平有效，沿用 page-player） =====
-#define BUTTON_MODULE_GPIO   GPIO_NUM_8
+// ===== 抽奖按钮（**低电平触发**：内部上拉 + 按下接地）=====
+// 用户确认接线为低电平触发；早期注释写的 active_high 是错的（已更正）。
+#define BUTTON_MODULE_GPIO           GPIO_NUM_8
+#define BUTTON_MODULE_ACTIVE_LEVEL   0      // 0 = 按下为低（上拉/接地）
+#define BUTTON_MODULE_DEBOUNCE_MS    30     // 软件去抖窗口：窗口内的抖动全部吞掉
+#define BUTTON_MODULE_COOLDOWN_MS    1000   // 触发限流：**1 秒内只接受一次**（用户要求）
+
+static_assert(BUTTON_MODULE_ACTIVE_LEVEL == 0 || BUTTON_MODULE_ACTIVE_LEVEL == 1,
+              "按钮触发电平只能是 0 或 1");
+static_assert(BUTTON_MODULE_DEBOUNCE_MS >= 1 && BUTTON_MODULE_DEBOUNCE_MS < BUTTON_MODULE_COOLDOWN_MS,
+              "去抖窗口必须 ≥1ms 且小于限流间隔");
+static_assert(BUTTON_MODULE_COOLDOWN_MS == 1000, "抽奖按钮限流按需求固定为 1 秒");
 
 // ===== 红外接收（保留，RMT） =====
 #define IR_RECEIVER_GPIO     GPIO_NUM_3

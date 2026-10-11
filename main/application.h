@@ -11,6 +11,7 @@
 #include <freertos/task.h>
 
 #include "boards/common/button.h"
+#include "button_gate.h"
 #include "dmx512/dmx512_service.h"
 #include "lottery/lottery_controller.h"
 #include "lottery/prize_pool.h"
@@ -25,6 +26,14 @@
 class Application {
 public:
     static Application& GetInstance();
+
+    /// 按钮闸门统计快照（串口 btbtn 自检用；public 以便控制台读取）
+    struct ButtonStats {
+        int draw_accepted = 0, draw_debounce = 0, draw_cooldown = 0;
+        int page_accepted = 0, page_debounce = 0, page_cooldown = 0;
+        int64_t draw_last_ms = -1;
+    };
+    ButtonStats ButtonStatsSnapshot() const;
 
     void Start();
 
@@ -67,6 +76,9 @@ private:
     std::unique_ptr<LotteryController> controller_;
     std::unique_ptr<Button> module_button_;
     std::unique_ptr<Button> reset_button_;   // GPIO5 长按 5 秒 → 复位网络配置
+    // 按钮触发闸门：软件去抖 + 限流（抽奖与打自检页各一个，互不饿死）
+    ButtonGate draw_gate_{BUTTON_MODULE_DEBOUNCE_MS, BUTTON_MODULE_COOLDOWN_MS};
+    ButtonGate testpage_gate_{BUTTON_MODULE_DEBOUNCE_MS, BUTTON_MODULE_COOLDOWN_MS};
 
     // ---- Schedule 机制（mutex + deque + event group） ----
     std::deque<std::function<void()>> schedule_queue_;
