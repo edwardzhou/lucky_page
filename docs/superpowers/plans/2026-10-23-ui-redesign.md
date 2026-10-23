@@ -24,4 +24,6 @@
 ## Task 4 验证
 - [x] `mobile_layout_check.py` → **117 / 0**
 - [x] 截图归档 `docs/superpowers/reviews/2026-10-23-ui/`
-- [ ] 真机 `web_smoke.py`（设备 192.168.0.252 当前不可达，待在线补跑）
+- [x] 真机 `web_smoke.py` → 63/0（设备 192.168.0.125，dms-1）
+- [x] 真机 `api_verify.py` → 82/0（默认不出纸）
+- [x] 真机截图归档（桌面 6 页 + 手机 4 页，零 JS 异常）

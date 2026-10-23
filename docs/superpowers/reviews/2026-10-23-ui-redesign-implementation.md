@@ -56,7 +56,10 @@
 |---|---|
 | 离线布局/交互校验 | **117 PASSED / 0 FAILED**（含 6 页跨页样式一致性、触控 ≥40px、无横向溢出、抽屉、画布拖动量纲、artnet 结构） |
 | 截图 | `docs/superpowers/reviews/2026-10-23-ui/`（index / prizes / calibrate / wifi 手机端 + receipt 桌面端） |
-| 真机 | **本次未连接设备**（192.168.0.252 不可达）→ 真机 `web_smoke.py` 待设备在线后补跑（契约未变，风险低） |
+| 真机 API 验收 | **82 / 0**（`api_verify`，默认不出纸） |
+| 真机浏览器冒烟 | **63 / 0**（`web_smoke.py`，6 页面零 JS 异常 + 画布交互 + 标定还原） |
+| 真机截图 | `docs/superpowers/reviews/2026-10-23-ui/device-desktop-*.png`（6 页）与 `device-mobile-*.png`（4 页），JS 异常 0 |
+| 设备侧取证 | 读 SPIFFS 分区：`page-head`/`draw-state`/`zone-danger`/`metrics`/`preview-wrap`/`设计系统 v2` 全在，旧版特征全无 |
 
 ## 5. 取舍与后续
 
