@@ -78,78 +78,118 @@ pre.preview{background:#fff;color:#000;padding:10px;border-radius:var(--r-ctl);f
 </style>
 <!-- 移动端统一样式（安全区/44px 触控/16px 输入框/底部抽屉/固定操作栏）：必须在内联样式之后 -->
 <link rel="stylesheet" href="app.css">
+<style>
+/* 设计系统 v2 的页面补丁：工具条分组与右栏标题（放在 app.css 之后） */
+.toolbar{display:flex;gap:6px;flex-wrap:wrap;align-items:center}
+.toolbar + .toolbar{margin-top:8px}
+.tool-label{font-size:12px;color:var(--tx-mute);white-space:nowrap}
+@media(min-width:641px){.toolbar select{width:auto;min-height:36px;padding:6px 8px;font-size:13px}}
+.card-head .card-actions{display:flex;gap:8px;align-items:center}
+#panels .card-head{margin-bottom:10px;font-size:13px}
+@media(max-width:640px){
+  .toolbar{gap:6px}
+  .toolbar .tool-label{display:none}          /* 手机上省宽度：按钮本身可读 */
+  .toolbar button{flex:1 1 auto}
+  .toolbar select{flex:1 1 100%}
+}
+</style>
 </head>
 <body class="wide has-actbar">
-<nav><a href="/index.html">抽奖</a><a href="/prizes.html">奖池</a><a href="/receipt.html">小票</a><a href="/logo.html">Logo</a><a href="/calibrate.html">标定</a><a href="/wifi.html">WiFi</a></nav>
-<div id="errbar" style="display:none;background:#e8433f;color:#fff;padding:8px 12px;border-radius:8px;
-     margin-bottom:10px;font-size:13px;word-break:break-all"></div>
+<nav>
+  <span class="brand"><i></i>幸运翻页机</span>
+  <div class="tabs">
+    <a href="/index.html">抽奖</a><a href="/prizes.html">奖池</a><a href="/receipt.html">小票</a><a href="/logo.html">Logo</a><a href="/calibrate.html">标定</a><a href="/wifi.html">WiFi</a>
+  </div>
+</nav>
+
+<header class="page-head">
+  <div>
+    <h1>小票</h1>
+    <div class="sub">拖动排版 · 所见即所打（「打测试页」用当前画布直接打印）</div>
+  </div>
+</header>
+
+<div id="errbar" class="msg err" style="display:none"></div>
+
 <div class="layout">
   <div>
     <div class="card">
-      <h3>画布 —— 拖动元素：左右改列位，上下改顺序</h3>
-      <div class="toolbar">
-        <button onclick="add('line')">＋ 文字行</button>
-        <button onclick="add('separator')">＋ 分隔线</button>
-        <button onclick="add('qr')">＋ 二维码</button>
-        <button onclick="add('logo')">＋ Logo</button>
-        <button onclick="add('feed')">＋ 走纸</button>
-        <span style="color:#9ab;font-size:12px;margin-left:8px">纸宽</span>
-        <select id="paper" onchange="setPaper(this.value)" style="width:auto">
-          <option value="32">58mm（32 列）</option><option value="48">80mm（48 列）</option></select>
-        <span class="zgrp" title="画布缩放">
-          <button class="mini" id="zoomOut" onclick="zoomStep(-0.15)" aria-label="缩小">－</button>
-          <button class="mini" id="fitBtn" onclick="fitCanvas()">适应宽度</button>
-          <button class="mini" id="zoomIn" onclick="zoomStep(0.15)" aria-label="放大">＋</button>
-          <span id="zoomTxt">100%</span>
+      <div class="card-head">
+        画布
+        <span class="card-actions">
+          <span class="zgrp" title="画布缩放">
+            <button class="mini" id="zoomOut" onclick="zoomStep(-0.15)" aria-label="缩小">－</button>
+            <button class="mini" id="fitBtn" onclick="fitCanvas()">适应宽度</button>
+            <button class="mini" id="zoomIn" onclick="zoomStep(0.15)" aria-label="放大">＋</button>
+            <span id="zoomTxt">100%</span>
+          </span>
         </span>
-        <button class="mini" onclick="togglePreview()">服务端预览</button>
-        <details>
-          <summary>更多（出厂 / 重置）</summary>
-          <div class="row">
-            <button class="mini" onclick="loadDefault()">恢复出厂（当前类型）</button>
-            <button class="mini" onclick="resetAll()">全部重置为出厂</button>
-          </div>
-        </details>
       </div>
-      <div class="toolbar" style="border-top:1px solid #2a3a5a;padding-top:8px">
-        <span style="color:#9ab;font-size:12px">版式类型</span>
-        <select id="mode" onchange="setMode(this.value)" style="width:auto">
+
+      <div class="toolbar">
+        <span class="tool-label">添加</span>
+        <button class="sm" onclick="add('line')">＋ 文字行</button>
+        <button class="sm" onclick="add('separator')">＋ 分隔线</button>
+        <button class="sm" onclick="add('qr')">＋ 二维码</button>
+        <button class="sm" onclick="add('logo')">＋ Logo</button>
+        <button class="sm" onclick="add('feed')">＋ 走纸</button>
+      </div>
+
+      <div class="toolbar">
+        <label class="tool-label" for="paper">纸宽</label>
+        <select id="paper" onchange="setPaper(this.value)">
+          <option value="32">58mm（32 列）</option><option value="48">80mm（48 列）</option>
+        </select>
+        <label class="tool-label" for="mode">版式</label>
+        <select id="mode" onchange="setMode(this.value)">
           <option value="flow">纯文字（最快，行数不限）</option>
           <option value="canvas">画布（整框背景 + 文字叠加）</option>
           <option value="banner">花边（上下分段，行数不限）</option>
         </select>
         <span id="bannerrows" style="display:none">
-          <span style="color:#9ab;font-size:12px">顶部花边</span>
+          <label class="tool-label" for="btop">顶部花边</label>
           <input type="number" id="btop" min="0" max="10" value="2" style="width:56px" onchange="render(0)">
-          <span style="color:#9ab;font-size:12px">行 · 底部花边</span>
+          <label class="tool-label" for="bbot">行 · 底部</label>
           <input type="number" id="bbot" min="0" max="10" value="3" style="width:56px" onchange="render(0)">
-          <span style="color:#9ab;font-size:12px">行</span>
+          <span class="tool-label">行</span>
         </span>
-        <span id="modehint" class="hint" style="margin-left:8px"></span>
+        <span id="modehint" class="hint" style="margin:0"></span>
       </div>
+
       <div id="ruler"></div>
       <div id="stage"><div id="canvas"><div id="grid"></div></div></div>
-      <div class="hint" style="margin-top:8px">
-        虚线框 = 元素边界 · 左右拖动吸附列位 · 上下拖动调整顺序 · 点选后右侧编辑
-      </div>
+      <div class="hint" style="margin-top:8px">虚线框 = 元素边界 · 左右拖动吸附列位 · 上下拖动调整顺序 · 点选后在右侧/抽屉编辑</div>
     </div>
-    <pre class="preview" id="preview"></pre>
+
+    <div class="card">
+      <div class="card-head">
+        更多
+        <span class="card-actions"><button class="sm ghost" onclick="togglePreview()">服务端预览</button></span>
+      </div>
+      <div class="row" style="margin:0">
+        <button class="sm" onclick="loadDefault()">恢复出厂（当前类型）</button>
+        <button class="sm danger" onclick="resetAll()">全部重置为出厂</button>
+      </div>
+      <pre class="preview" id="preview"></pre>
+    </div>
   </div>
+
   <div>
     <!-- 桌面端：右栏；手机端：底部抽屉（CSS 在 ≤640px 时把 #panels 固定到底部） -->
     <div id="panels">
       <div class="handle"></div>
       <button class="mini sheet-close" onclick="closeSheet()">收起</button>
       <div class="card panel">
-        <h3>元素属性</h3>
+        <div class="card-head">元素属性</div>
         <div class="hint" id="noSel">在画布上点选一个元素</div>
         <div id="form" style="display:none"></div>
       </div>
       <div class="card panel">
-        <h3>插入参数</h3>
+        <div class="card-head">插入参数</div>
         <div class="psel" id="params">加载中…</div>
       </div>
     </div>
+
     <!-- 主操作：手机端变底部固定栏（同一批按钮，不复制 DOM） -->
     <div class="card actions">
       <div class="row">

@@ -5,67 +5,115 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <title>奖池配置</title>
 <style>
-/* 页面特有样式；通用组件（body/.card/table/input/button/.row/.warn…）统一走 app.css 基础层 */
-#tiers input{width:100%}                 /* 表格内输入框撑满单元格 */
-.prob{font-size:11px;color:#7fd}
-.prob.low{color:var(--p);font-weight:bold}
-.dep{color:#777;text-decoration:line-through}
+/* 页面特有样式；通用骨架与组件统一走 app.css */
+#tiers input{width:100%}
+.dep{opacity:.55}
+.dep td:first-child{text-decoration:line-through}
+/* 基础设置：两个字段并排，手机上自动堆叠 */
+.setting-grid{display:grid;grid-template-columns:1fr 1fr;gap:0 16px}
+.setting-grid .field{margin-bottom:8px}
+.setting-grid .row{margin:0}
+@media(max-width:640px){.setting-grid{grid-template-columns:1fr}}
+/* 库存归零的行给一个明确的"已发完"标记 */
+.tag-done{font-size:11px;color:#ff9a9d;border:1px solid rgba(229,72,77,.4);
+  border-radius:999px;padding:1px 6px;margin-left:4px;white-space:nowrap}
 </style>
-<!-- 移动端统一样式（安全区/44px 触控/16px 输入框/宽表转卡片）：必须在各页内联样式之后 -->
+<!-- 统一样式（设计系统 v2）：必须在各页内联样式之后 -->
 <link rel="stylesheet" href="app.css">
 </head>
 <body class="has-actbar">
-<nav><a href="/index.html">抽奖</a><a href="/prizes.html">奖池</a><a href="/receipt.html">小票</a><a href="/logo.html">Logo</a><a href="/calibrate.html">标定</a><a href="/wifi.html">WiFi</a></nav>
-<div class="card">
-  <b>总页数</b>
-  <div class="row">
-    <input type="number" id="pages" min="2" max="128" style="width:80px">
-    <button onclick="savePages()">保存页数</button>
-    <span style="font-size:12px;color:#9ab">（奖池页码不得超出，改小会被拒绝）</span>
+<nav>
+  <span class="brand"><i></i>幸运翻页机</span>
+  <div class="tabs">
+    <a href="/index.html">抽奖</a><a href="/prizes.html">奖池</a><a href="/receipt.html">小票</a><a href="/logo.html">Logo</a><a href="/calibrate.html">标定</a><a href="/wifi.html">WiFi</a>
   </div>
-  <div class="row">
-    <label>耗尽策略</label>
-    <select id="policy" style="background:#0d1b3e;color:#eee;padding:5px;border-radius:4px">
-      <option value="0">回退到「谢谢参与」（不冷场）</option>
-      <option value="1">拒绝开奖（宁停不发错）</option>
-    </select>
+</nav>
+
+<header class="page-head">
+  <div>
+    <h1>奖池</h1>
+    <div class="sub">概率 = 权重占比；库存扣完自动退出该奖级</div>
+  </div>
+  <span class="chip" id="tierChip">共 — 级</span>
+</header>
+
+<div class="card">
+  <div class="card-head">基础设置</div>
+  <div class="setting-grid">
+    <div class="field">
+      <label for="pages">总页数（奖池页码上限）</label>
+      <div class="row" style="gap:8px;flex-wrap:nowrap">
+        <input type="number" id="pages" min="2" max="128" style="width:96px">
+        <button class="sm" onclick="savePages()">保存页数</button>
+      </div>
+      <div class="hint">改小会被拒绝（现有奖级页码不得越界）；改完建议到「标定」页核对行程。</div>
+    </div>
+    <div class="field">
+      <label for="policy">奖品耗尽后</label>
+      <select id="policy">
+        <option value="0">回退到「谢谢参与」（不冷场）</option>
+        <option value="1">拒绝开奖（宁停不发错）</option>
+      </select>
+      <div class="hint">限量奖级全部发完后，机器的行为。</div>
+    </div>
   </div>
 </div>
+
 <div class="card">
-  <b>奖池（概率 = 权重占比，库存扣完自动退出）</b>
+  <div class="card-head">
+    奖池明细
+    <span class="card-actions"><button class="sm ghost" onclick="addRow()">＋ 加一级</button></span>
+  </div>
   <table id="tiers" class="tbl-cards">
-    <tr class="hdr"><th>等级</th><th>页码</th><th>权重</th><th>概率</th><th>数量</th><th>剩余</th><th>名称</th><th>副标题</th><th></th></tr>
+    <tr class="hdr"><th>等级</th><th>页码</th><th>权重</th><th>概率</th><th>数量</th><th>剩余</th><th>名称</th><th>副标题</th><th>操作</th></tr>
   </table>
-  <div class="row actbar">
-    <button onclick="addRow()">＋ 加一级</button>
-    <button class="primary" onclick="save()">保存奖池</button>
-    <button onclick="resetStock()">重置库存</button>
-  </div>
-  <div id="msg" class="warn"></div>
+  <div class="msg" id="msg"></div>
 </div>
+
+<div class="zone-danger">
+  <div class="card-head">危险操作</div>
+  <div class="hint">重置库存会把所有限量奖级恢复到满额，<b>不会</b>改动页码、权重与名称。</div>
+  <div class="row" style="margin-top:10px">
+    <button class="danger" onclick="resetStock()">重置全部库存</button>
+  </div>
+</div>
+
+<div class="actbar">
+  <button class="primary block" onclick="save()">保存奖池</button>
+</div>
+
 <script>
 const $=s=>document.querySelector((s[0]==='#'||s[0]==='.')?s:('#'+s));
 let pages=30;
+function show(kind,text){
+  if(window.showMsg) showMsg('#msg',kind,text);
+  else {$('#msg').textContent=text;$('#msg').className='msg show '+(kind==='ok'?'ok':kind==='err'?'err':'warn');}
+}
 async function load(){
   const [p,pg]=await Promise.all([fetch('/api/prizes').then(r=>r.json()),fetch('/api/pages').then(r=>r.json())]);
   pages=p.total_pages;$('#pages').value=pages;$('#policy').value=p.depletion_policy;
+  $('#tierChip').textContent='共 '+p.tiers.length+' 级';
   const t=$('#tiers');
   t.querySelectorAll('tr:not(:first-child)').forEach(r=>r.remove());
   p.tiers.forEach(x=>{
     const tr=document.createElement('tr');
     if(x.quantity>0&&x.remaining===0)tr.className='dep';
-    tr.dataset.tier=x.level;                       // 卡片化后仍可稳定选中数据行（不含表头）
+    tr.dataset.tier=x.level;
     const prob=(x.probability*100);
+    const low=prob<0.5;
+    const done=x.quantity>0&&x.remaining===0;
+    const remain=done?`<span class="tag-done">已发完</span>`:(x.quantity<0?'∞':x.remaining);
     // data-label：手机端表格转卡片后，每个字段左边显示列名（CSS ::before 读取）
     tr.innerHTML=`<td data-label="等级">${x.level}</td>
     <td data-label="页码"><input type="number" value="${x.page}" min="0" max="${pages-1}" data-l="${x.level}" data-f="page" style="width:64px"></td>
     <td data-label="权重"><input type="number" value="${x.weight}" min="0" data-l="${x.level}" data-f="weight" style="width:70px"></td>
-    <td data-label="概率"><span class="prob ${prob<0.5?'low':''}">${prob.toFixed(1)}%</span></td>
+    <td data-label="概率"><span class="prob ${low?'low':''}">${prob.toFixed(1)}%</span>
+      <span class="prob-bar ${low?'low':''}"><i style="width:${Math.min(100,prob)}%"></i></span></td>
     <td data-label="数量"><input type="number" value="${x.quantity}" data-l="${x.level}" data-f="quantity" style="width:70px" placeholder="-1 不限"></td>
-    <td data-label="剩余">${x.quantity<0?'∞':x.remaining}</td>
+    <td data-label="剩余">${remain}</td>
     <td data-label="名称"><input type="text" value="${x.name}" data-l="${x.level}" data-f="name" style="width:90px"></td>
     <td data-label="副标题"><input type="text" value="${x.note}" data-l="${x.level}" data-f="note" style="width:130px"></td>
-    <td data-label="操作"><a href="#" onclick="delRow(${x.level});return false" style="color:#e74">删</a></td>`;
+    <td data-label="操作"><button class="sm danger" onclick="delRow(this)">删除</button></td>`;
     t.appendChild(tr);
   });
 }
@@ -76,11 +124,11 @@ function collect(){
       quantity:g('quantity')===''?-1:+g('quantity'),
       remaining:0,name:g('name'),note:g('note')};
   });
-  // remaining：新配置沿用服务端当前值（按 level 匹配）
   return tiers;
 }
+function tierCount(){return $('#tiers').querySelectorAll('tr:not(:first-child)').length}
 function addRow(){
-  const t=$('#tiers');const lv=t.querySelectorAll('tr:not(:first-child)').length+1;
+  const t=$('#tiers');const lv=tierCount()+1;
   const tr=document.createElement('tr');
   tr.dataset.tier=lv;
   tr.innerHTML=`<td data-label="等级">${lv}</td>
@@ -91,10 +139,11 @@ function addRow(){
   <td data-label="剩余">-</td>
   <td data-label="名称"><input type="text" value="新奖项" data-f="name" style="width:90px"></td>
   <td data-label="副标题"><input type="text" value="" data-f="note" style="width:130px"></td>
-  <td data-label="操作"><a href="#" onclick="this.closest('tr').remove();return false" style="color:#e74">删</a></td>`;
+  <td data-label="操作"><button class="sm danger" onclick="delRow(this)">删除</button></td>`;
   t.appendChild(tr);
+  $('#tierChip').textContent='共 '+tierCount()+' 级';
 }
-function delRow(){event.target.closest('tr').remove()}
+function delRow(el){el.closest('tr').remove();$('#tierChip').textContent='共 '+tierCount()+' 级';}
 async function save(){
   const tiers=collect();
   const old=(await fetch('/api/prizes').then(r=>r.json())).tiers;
@@ -102,20 +151,22 @@ async function save(){
   const body=JSON.stringify({version:2,total_pages:pages,depletion_policy:+$('#policy').value,tiers});
   const r=await fetch('/api/prizes',{method:'PUT',body});
   const d=await r.json();
-  $('#msg').textContent=r.ok?'✅ 已保存':'❌ '+d.error;
-  if(r.ok)setTimeout(load,600);
+  show(r.ok?'ok':'err',r.ok?'✅ 已保存':'❌ '+d.error);
+  if(r.ok){ if(window.toast) toast('奖池已保存'); setTimeout(load,600); }
 }
 async function savePages(){
   const v=+$('#pages').value;
   const r=await fetch('/api/pages',{method:'PUT',body:JSON.stringify({total_pages:v})});
   const d=await r.json();
-  $('#msg').textContent=r.ok?'✅ 页数已保存（建议到「标定」页核对行程值）':'❌ '+d.error;
-  if(r.ok)pages=v;
+  show(r.ok?'ok':'err',r.ok?'✅ 页数已保存（建议到「标定」页核对行程值）':'❌ '+d.error);
+  if(r.ok){pages=v; if(window.toast) toast('总页数已保存为 '+v);}
 }
 async function resetStock(){
-  if(!confirm('把所有限量级库存恢复到满额？'))return;
+  if(!confirm('把所有限量级库存恢复到满额？\n（页码/权重/名称不变）'))return;
   await fetch('/api/prizes/reset-stock',{method:'POST'});
-  $('#msg').textContent='✅ 库存已重置';load();
+  show('ok','✅ 库存已重置');
+  if(window.toast) toast('库存已重置');
+  load();
 }
 load();
 </script>

@@ -3,65 +3,126 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-<title>幸运翻页机</title>
+<title>幸运翻页机 · 抽奖</title>
 <style>
-/* 页面特有样式；通用组件（body/.card/button/input/.note/.row…）统一走 app.css 基础层 */
-.card{text-align:center}                 /* 抽奖页卡片内容居中 */
-#state{font-size:14px;margin-bottom:12px}
-#state .dot{display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:6px;vertical-align:middle}
-.st-idle .dot{background:var(--g)}.st-spinning .dot,.st-printing .dot{background:var(--w);animation:pulse 1s infinite}
-.st-homing .dot,.st-boot .dot{background:var(--w);animation:pulse 2s infinite}
-.st-homing_failed .dot,.st-out_of_prizes .dot{background:var(--p)}
-@keyframes pulse{50%{opacity:.3}}
-/* 抽奖大按钮：形状是页面特例，颜色/字重沿用统一令牌 */
-#draw{width:200px;height:200px;border-radius:50%;border:none;background:var(--p);color:#fff;font-size:32px;font-weight:bold;cursor:pointer;transition:transform .1s;box-shadow:0 8px 30px rgba(232,67,63,.4)}
-#draw:active{transform:scale(.95)}
-#draw:disabled{background:#555;cursor:not-allowed;box-shadow:none}
-#last{margin-top:14px;font-size:15px;line-height:1.8}
-#last .prize{font-size:26px;font-weight:bold;color:#ffd700}
-.stats{display:flex;justify-content:center;gap:24px;margin-top:12px;font-size:13px;color:#aaa}
-.fault{background:#5c1a1a;border:1px solid var(--p);border-radius:var(--r-ctl);padding:10px;margin-bottom:12px;display:none;font-size:13px}
-@keyframes roll{0%{transform:rotate(0)}100%{transform:rotate(360deg)}}
-#draw.rolling{background:var(--p-dark);animation:roll 1.2s linear infinite}
+/* 页面特有样式；通用骨架（页头/卡片头/指标/消息条/按钮）统一走 app.css */
+.draw-card{text-align:center}
+/* 开奖状态：chip 化，颜色由状态决定（ok=就绪 / warn=进行中 / bad=故障） */
+/* 页头 chip 已展示"能否开奖"，这里只用一行弱化文字补充细节（不重复做第二个 chip） */
+.draw-state{
+  display:inline-flex;align-items:center;gap:8px;
+  font-size:12px;font-weight:600;color:var(--tx-mute);
+  margin-bottom:16px;
+}
+.draw-state .dot{width:8px;height:8px;border-radius:50%;background:currentColor}
+.st-idle{color:var(--ok)}
+.st-spinning,.st-printing,.st-done{color:var(--warn)}
+.st-homing,.st-boot{color:var(--warn)}
+.st-homing_failed,.st-out_of_prizes{color:var(--danger)}
+.st-spinning .dot,.st-printing .dot{animation:pulse 1s infinite}
+.st-homing .dot,.st-boot .dot{animation:pulse 2s infinite}
+@keyframes pulse{50%{opacity:.25}}
+
+/* 抽奖大按钮：页面特例，但用统一的品牌色与阴影语言 */
+#draw{
+  width:196px;height:196px;border-radius:50%;
+  border:6px solid rgba(255,255,255,.10);
+  background:radial-gradient(circle at 50% 30%, #ff7468, var(--brand) 62%, var(--brand-dark));
+  color:#fff;font-size:30px;font-weight:800;letter-spacing:.08em;
+  cursor:pointer;transition:transform .1s ease, box-shadow .2s ease;
+  box-shadow:0 18px 44px rgba(255,90,78,.32), inset 0 -8px 24px rgba(0,0,0,.18);
+}
+#draw:hover{box-shadow:0 20px 52px rgba(255,90,78,.42), inset 0 -8px 24px rgba(0,0,0,.18)}
+#draw:active{transform:scale(.96)}
+#draw:disabled{background:#232c3e;border-color:rgba(255,255,255,.06);color:#5b6880;box-shadow:none;cursor:not-allowed}
+#draw.rolling{animation:roll 1.2s linear infinite}
+@keyframes roll{to{transform:rotate(360deg)}}
+
+/* 最近结果 */
+#last .prize{font-size:26px;font-weight:800;color:#ffd166;line-height:1.3;margin-bottom:2px}
+#last .meta{font-size:12px;color:var(--tx-mute);font-variant-numeric:tabular-nums}
+#last .empty{margin-top:2px}
+@media(max-width:640px){
+  #draw{width:172px;height:172px;font-size:26px}
+}
 </style>
-<!-- 移动端统一样式（安全区/44px 触控/16px 输入框/固定操作栏）：必须在各页内联样式之后 -->
+<!-- 统一样式（设计系统 v2）：必须在各页内联样式之后 -->
 <link rel="stylesheet" href="app.css">
 </head>
 <body>
-<nav><a href="/index.html">抽奖</a><a href="/prizes.html">奖池</a><a href="/receipt.html">小票</a><a href="/logo.html">Logo</a><a href="/calibrate.html">标定</a><a href="/wifi.html">WiFi</a></nav>
-<div class="fault" id="fault">⚠ 打印机异常：请检查纸张与连线（连续失败 ≥3 次）</div>
-<div class="card">
-  <div id="state"><span class="dot"></span><span id="stateText">连接中…</span></div>
-  <button id="draw" onclick="draw()">抽奖</button>
-  <div id="last"></div>
-  <div class="stats"><span>累计 <b id="total">0</b></span><span>今日 <b id="today">0</b></span></div>
-  <button class="mini" onclick="testTicket()">打印测试票</button>
+<nav>
+  <span class="brand"><i></i>幸运翻页机</span>
+  <div class="tabs">
+    <a href="/index.html">抽奖</a><a href="/prizes.html">奖池</a><a href="/receipt.html">小票</a><a href="/logo.html">Logo</a><a href="/calibrate.html">标定</a><a href="/wifi.html">WiFi</a>
+  </div>
+</nav>
+
+<header class="page-head">
+  <div>
+    <h1>抽奖</h1>
+    <div class="sub">按机器上的按钮或下方大按钮开奖，命中即出票</div>
+  </div>
+  <span class="chip ok" id="headChip"><span class="dot"></span><span id="headChipText">连接中</span></span>
+</header>
+
+<div class="msg err" id="fault">⚠ 打印机异常：请检查纸张与连线（连续失败 ≥3 次）</div>
+
+<div class="metrics">
+  <div class="metric"><span class="n" id="total">0</span><span class="l">累计开奖</span></div>
+  <div class="metric"><span class="n" id="today">0</span><span class="l">今日开奖</span></div>
 </div>
+
+<div class="card draw-card">
+  <div class="draw-state" id="state"><span class="dot"></span><span id="stateText">连接中…</span></div>
+  <div><button id="draw" onclick="draw()">抽奖</button></div>
+</div>
+
+<div class="card">
+  <div class="card-head">最近一次</div>
+  <div id="last">
+    <div class="empty" id="lastEmpty"><span class="big">🎟</span>还没有开奖记录<br>按下按钮开始第一次抽奖</div>
+  </div>
+</div>
+
+<div class="actbar">
+  <button class="ghost" onclick="testTicket()">打印测试票</button>
+  <span class="hint" id="msg">测试票会用当前保存的版式打印一张</span>
+</div>
+
 <script>
 const $=s=>document.querySelector((s[0]==='#'||s[0]==='.')?s:('#'+s));
 const ST={boot:'启动中…',homing:s=>`正在归零，请稍候${s&&s<15?'（约 '+Math.ceil(s)+'s）':''}…`,homed:'就绪',
 homing_failed:'归零失败：请检查机械/接线后重启',idle:'就绪，可开奖',spinning:'翻页中…',
 printing:'打印小票中…',done:'开奖完成',out_of_prizes:'奖品已发完（等待补货或重置库存）',unknown:'…'};
+// 状态 → 页头 chip 的语义色（ok=可开奖 / warn=进行中 / bad=故障）
+const CHIP={idle:'ok',done:'ok',spinning:'warn',printing:'warn',homing:'warn',boot:'warn',
+            homing_failed:'bad',out_of_prizes:'bad',unknown:''};
 let rolling=false;
 async function poll(){
   try{
     const r=await fetch('/api/lottery/status');const d=await r.json();
-    $('#state').className='st-'+d.state;
+    $('#state').className='draw-state st-'+d.state;
     const f=ST[d.state]||d.state;
-    $('#stateText').textContent=typeof f==='function'?f(12):f;
-    $('#fault').style.display=d.printer_fault?'block':'none';
+    const label=typeof f==='function'?f(12):f;
+    $('#stateText').textContent=label;
+    // 页头 chip 与状态同步：一眼看出"能不能抽"
+    $('#headChip').className='chip '+(CHIP[d.state]||'');
+    $('#headChipText').textContent=d.state==='idle'||d.state==='done'?'可开奖':label.replace(/…$/,'');
+    $('#fault').classList.toggle('show', !!d.printer_fault);
     $('#total').textContent=(d.stats&&d.stats.total_draws!=null)?d.stats.total_draws:0;
     $('#today').textContent=(d.stats&&d.stats.today_draws!=null)?d.stats.today_draws:0;
     if(d.last&&d.last.ticket){
       const p=d.last.print==='ok'?'已打印':d.last.print==='failed'?'打印失败':'未打印';
       $('#last').innerHTML=`<div class="prize">${d.last.prize_name||''}</div>
-      <div>${d.last.ticket||''} · ${d.last.time||''} · ${p}</div>`;
+      <div class="meta">${d.last.ticket||''} · ${d.last.time||''} · ${p}</div>`;
+    }else{
+      $('#last').innerHTML='<div class="empty" id="lastEmpty"><span class="big">🎟</span>还没有开奖记录<br>按下按钮开始第一次抽奖</div>';
     }
     const can=d.state==='idle'||d.state==='done';
     $('#draw').disabled=!can||rolling;
     if(d.state!=='spinning')rolling=false;
     $('#draw').className=d.state==='spinning'?'rolling':'';
-  }catch(e){$('#stateText').textContent='连接失败，重试中…'}
+  }catch(e){$('#stateText').textContent='连接失败，重试中…';$('#headChip').className='chip bad';$('#headChipText').textContent='离线'}
 }
 function draw(){
   rolling=true;$('#draw').disabled=true;
@@ -70,7 +131,11 @@ function draw(){
     setTimeout(poll,300);
   });
 }
-function testTicket(){fetch('/api/printer/test',{method:'POST'})}
+function testTicket(){
+  fetch('/api/printer/test',{method:'POST'}).then(r=>{
+    if(window.toast) toast(r.ok?'已发送打印测试票':'打印请求失败', r.ok?'ok':'err');
+  });
+}
 poll();setInterval(poll,1000);
 </script>
 <script src="app.js"></script>

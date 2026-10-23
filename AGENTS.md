@@ -167,10 +167,15 @@ main/
   page_mapping.{h,cc}       页码→DMX 基础映射（理论基准）
   page_adjust.{h,cc}        每页 int8 行程**偏移**（实际值 = clamp(基础+偏移, 0, 255)）
   assets/spiffs_contents/   6 个页面（index/prizes/receipt/logo/calibrate/wifi）
-  assets/spiffs_contents/app.css  6 页统一样式（唯一来源）：
-                            §1 设计令牌（色板 + 尺度）→ §2 基础层（所有宽度：body/.card/h3/
-                            button/input/table/.note/.row）→ §3 导航 → §4 底栏 →
-                            §5 手机层（≤640px：44px 触控/16px 输入框/安全区/抽屉/宽表转卡片）
+  assets/spiffs_contents/app.css  设计系统 v2（6 页唯一来源）：
+                            §1 设计令牌（**语义色分离**：brand/ok/warn/danger/info + 表面/尺度）
+                            §2 基础层（body/排印/按钮/表单/表格/旧提示类兼容）
+                            §3 骨架组件（.page-head / .card-head / .kv / .metrics / .chip /
+                                      .msg / #toast / .zone-danger / .empty / .field / .prob-bar / .seg）
+                            §4 导航（品牌 + tab，选中态由 app.js 按 URL 判定并打 aria-current）
+                            §5 底栏 → §6 手机层（≤640px：44px 触控/16px 输入/安全区/抽屉/宽表转卡片）
+                            ⚠ 被 mobile_layout_check 锁定的量纲：760px · 卡片 16/12 ·
+                            按钮 8×16·14·8 · 输入 8×10·14·8 · h3 15px —— 改前先看断言
   assets/spiffs_contents/app.js   共享脚本（按 URL 自动高亮当前页菜单，避免各页手写漂移）
   assets/font24.bin         点阵字库（EMBED 进固件，7542 字形/≈630KB）
 test_apps/                  单测宿主（独立分区表！见 §四-6）
