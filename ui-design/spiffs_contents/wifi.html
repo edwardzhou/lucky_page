@@ -1,0 +1,476 @@
+<!DOCTYPE html><html lang="zh-CN"><head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+
+<style>
+/* 页面特有样式；通用骨架（页头/卡片/消息条）统一走 app.css。
+   结构沿用 artnet：状态行（标签左 / 值右 + 「修改」）→ 卡片标题带下边框 → 通栏主操作。 */
+h1{font-size:20px;font-weight:700}
+.card-title{font-size:.95rem;font-weight:600;margin-bottom:14px;padding-bottom:10px;
+           border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;gap:8px}
+.status-row{display:flex;justify-content:space-between;align-items:center;gap:10px;
+            padding:8px 0;border-bottom:1px solid var(--border)}
+.status-row:last-of-type{border-bottom:none}
+.status-label{font-size:13px;color:var(--tx-dim);flex:0 0 auto}
+.status-value{font-size:14px;font-weight:600;display:flex;align-items:center;gap:8px;
+              justify-content:flex-end;text-align:right;word-break:break-all;min-width:0;flex-wrap:wrap}
+.small-btn{background:var(--surface-2);color:var(--tx-dim);border:1px solid var(--border-strong);
+           border-radius:6px;padding:4px 10px;font-size:var(--fs-hint);cursor:pointer;flex:0 0 auto}
+.small-btn:hover{background:#263149;color:var(--tx)}
+.ip-mode-tag{display:inline-block;font-size:11px;padding:1px 6px;border-radius:999px;
+             background:var(--surface-2);color:var(--tx-dim);border:1px solid var(--border)}
+.ip-mode-tag.static{background:rgba(245,165,36,.12);color:#ffe0b0;border-color:rgba(245,165,36,.35)}
+/* 通栏主操作（校验脚本断言 primary 为 100% 宽度） */
+.action-btn{display:block;width:100%;padding:14px;border-radius:10px;font-size:1rem;
+            font-weight:600;margin-bottom:10px}
+.action-btn:last-child{margin-bottom:0}
+.action-btn.primary{background:var(--brand);border-color:transparent}
+.action-btn.primary:hover{background:var(--brand-dark)}
+.action-btn.danger{background:rgba(229,72,77,.10);border-color:rgba(229,72,77,.45);color:#ff9a9d}
+.action-btn.danger:hover{background:rgba(229,72,77,.20)}
+.ip-edit-area{border-top:1px solid var(--border);margin-top:12px;padding-top:12px}
+.ip-row{display:flex;align-items:center;gap:10px;margin-bottom:8px}
+.ip-row label{min-width:76px;flex:0 0 auto;font-size:13px;color:var(--tx-dim)}
+.ip-row input{flex:1 1 auto;min-width:0}
+.ip-btns{display:flex;gap:8px;margin-top:10px;flex-wrap:wrap}
+.empty-hint{text-align:center;color:var(--tx-mute);font-size:13px;padding:22px 0}
+.ap{display:flex;flex-direction:column;gap:8px;padding:12px 0;border-bottom:1px solid var(--border)}
+.ap:last-child{border-bottom:none;padding-bottom:0}
+.ap-main{display:flex;justify-content:space-between;align-items:center;gap:10px}
+.wifi-name{font-weight:600;word-break:break-all;font-size:14px}
+.wifi-rssi{font-size:12px;color:var(--tx-mute);flex:0 0 auto;font-family:ui-monospace,monospace}
+.ap-act{display:flex;gap:8px;align-items:center}
+.ap-act input{flex:1 1 auto;min-width:0}
+.ap-act button{flex:0 0 auto}
+.pw{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+</style>
+<!-- 统一样式（设计系统 v2）：必须在各页内联样式之后 -->
+
+<style>
+@media(max-width:640px){
+  .status-row{padding:10px 0}
+  .ap{padding:14px 0}
+  .ip-row label{min-width:64px}
+  .ip-row{flex-wrap:wrap}
+  .ip-row input{flex:1 1 100%}
+}
+</style>
+<link rel="stylesheet" href="./app.css"><title>网络连接 · Lucky Studio</title><meta name="theme-color" content="#194638"><link rel="icon" href="data:,"><script src="./demo.js"></script></head><body class="lp-app lp-page-wifi" data-page="wifi"><a class="lp-skip" href="#main">跳转到主要内容</a><aside class="lp-sidebar" id="lpSidebar" aria-label="主导航"><a class="lp-brand" href="./index.html"><span class="lp-brand-symbol"><svg class="lp-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m12 3 2.5 6.5L21 12l-6.5 2.5L12 21l-2.5-6.5L3 12l6.5-2.5ZM20 2v4M18 4h4"/></svg></span><span class="lp-brand-name">Lucky Studio<small>幸运翻页机 · 设备控制台</small></span></a><div class="lp-machine"><svg class="lp-icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="6" y="6" width="12" height="12" rx="2"/><path d="M9 2v4M15 2v4M9 18v4M15 18v4M2 9h4M2 15h4M18 9h4M18 15h4"/></svg><div><strong>Lucky Page Controller</strong><small>LOCAL DEVICE WORKSPACE</small></div></div><div class="lp-group-label">运营工作空间</div><nav class="lp-nav"><a href="./index.html"><svg class="lp-icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg><span>抽奖工作台</span></a><a href="./prizes.html"><svg class="lp-icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="8" width="18" height="4" rx="1"/><path d="M5 12v9h14v-9M12 8v13M12 8C5 8 4 2 8 3c3 0 4 5 4 5Zm0 0c7 0 8-6 4-5-3 0-4 5-4 5Z"/></svg><span>奖池管理</span></a><a href="./receipt.html"><svg class="lp-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 3h14v18l-3-2-4 2-4-2-3 2ZM8 8h8M8 12h8M8 16h4"/></svg><span>小票设计</span></a></nav><div class="lp-nav-separator"></div><div class="lp-group-label">设备与品牌</div><nav class="lp-nav"><a href="./logo.html"><svg class="lp-icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="3"/><circle cx="8" cy="8" r="1.5"/><path d="m3 17 5-5 5 5 4-4 4 4"/></svg><span>品牌素材</span></a><a href="./calibrate.html"><svg class="lp-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 3v5M5 14v7M12 3v10M12 19v2M19 3v2M19 11v10M2 8h6M9 19h6M16 5h6"/></svg><span>设备标定</span></a><a href="./wifi.html" class="on" aria-current="page"><svg class="lp-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M2 8a16 16 0 0 1 20 0M5 12a11 11 0 0 1 14 0M8 16a6 6 0 0 1 8 0"/><circle cx="12" cy="20" r=".8"/></svg><span>网络连接</span></a></nav><div class="lp-sidebar-bottom"><div class="lp-demo-note" id="demoNotice" hidden><span>演示环境 · 模拟设备数据</span>本次操作不会驱动设备或打印。<br><button id="resetDemo">重置演示数据</button></div><div class="lp-side-foot"><svg class="lp-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m12 2 9 4v6c0 5-9 10-9 10S3 17 3 12V6ZM8 12l3 3 5-6"/></svg><div><strong>设备本地工作空间</strong><small>Designed for every lucky moment.</small></div></div></div></aside><div class="lp-workspace"><header class="lp-topbar"><div class="lp-breadcrumb"><button class="lp-menu-button" aria-label="打开导航" aria-controls="lpSidebar" aria-expanded="false"><svg class="lp-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16"/></svg></button><span class="lp-breadcrumb-parent">设备工作空间</span><span class="lp-breadcrumb-slash">/</span><span>网络连接</span></div><div class="lp-topright"><span class="lp-connection" id="connection"><i></i><span>连接设备中</span></span><span class="lp-topline"></span><time id="clock"></time><span class="lp-topinfo" title="设备本地控制台"><svg class="lp-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 11v6M12 7v.1"/></svg></span></div></header><main class="lp-page" id="main"><header class="lp-page-head"><div><div class="lp-eyebrow">NETWORK CONNECTION</div><h1>网络连接</h1><p class="lp-subtitle">管理设备热点、WiFi 连接与自动校时。</p></div><div class="lp-page-actions"><div class="lp-status-slot"><span class="chip" id="headChip"><span class="dot"></span><span id="headChipText">读取中</span></span></div></div></header><div class="lp-content">
+
+
+
+
+<div class="card">
+  <div class="card-title">当前状态</div>
+  <div class="status-row">
+    <span class="status-label">AP 名称</span>
+    <span class="status-value"><span id="apName">—</span>
+      <button class="small-btn" id="apEditBtn" onclick="toggleApEdit()">修改</button></span>
+  </div>
+  <div class="status-row">
+    <span class="status-label">AP 密码</span>
+    <span class="status-value"><span id="apPassState">—</span>
+      <button class="small-btn" id="apPassEditBtn" onclick="toggleApPassEdit()">修改</button></span>
+  </div>
+  <div class="status-row">
+    <span class="status-label">STA 状态</span>
+    <span class="status-value"><span id="staStatus">读取中…</span></span>
+  </div>
+  <div class="status-row">
+    <span class="status-label">STA IP</span>
+    <span class="status-value"><span id="staIp">—</span><span class="ip-mode-tag" id="ipModeTag">DHCP</span>
+      <button class="small-btn" id="ipEditBtn" onclick="toggleIpEdit()">修改</button></span>
+  </div>
+  <div class="status-row">
+    <span class="status-label">子网掩码</span>
+    <span class="status-value"><span id="staNetmask">—</span></span>
+  </div>
+  <div class="status-row">
+    <span class="status-label">信号</span>
+    <span class="status-value"><span id="sig">—</span></span>
+  </div>
+  <div class="status-row">
+    <span class="status-label">已连网络</span>
+    <span class="status-value"><span id="connectedSsid">—</span></span>
+  </div>
+  <div class="status-row">
+    <span class="status-label">时间同步</span>
+    <span class="status-value"><span id="tsync">—</span></span>
+  </div>
+  <div class="status-row">
+    <span class="status-label">AP 客户端</span>
+    <span class="status-value"><span id="clients">—</span></span>
+  </div>
+
+  <!-- 改热点名（内联展开）-->
+  <div class="ip-edit-area" id="apEdit" style="display:none">
+    <div class="ip-row"><label for="apSsid">热点名</label>
+      <input id="apSsid" maxlength="31" placeholder="1..31 字节（中文按 3 字节）" autocomplete="off"></div>
+    <div class="ip-btns">
+      <button class="pri" id="apSave" onclick="saveAp()">保存</button>
+      <button class="mini" id="apReset" onclick="resetAp()">复原默认</button>
+      <button class="mini" onclick="toggleApEdit()">取消</button>
+    </div>
+    <div class="note">已连到本机热点的手机需要重新连接（抽奖不受影响）。</div>
+  </div>
+
+  <!-- 改热点密码（内联展开；密码绝不回显）-->
+  <div class="ip-edit-area" id="apPassEdit" style="display:none">
+    <div class="ip-row"><label for="apPass">新密码</label>
+      <input id="apPass" type="password" maxlength="63" placeholder="8..63 位（不要用 12345678）"
+             autocomplete="new-password"></div>
+    <div class="ip-btns">
+      <button class="pri" id="apPassSave" onclick="saveApPass()">保存</button>
+      <button class="mini" id="apPassReset" onclick="resetApPass()">复原默认</button>
+      <button class="mini" onclick="toggleApPassEdit()">取消</button>
+    </div>
+    <div class="note">改完<b>已连接本机热点的手机需要用新密码重连</b>（STA 与抽奖不受影响）。
+      密码不会在任何页面/接口回显；<b>忘记了可用串口 <code>wifi</code> 命令查看</b>，或在此「复原默认」。</div>
+  </div>
+
+  <!-- 静态 IP / DHCP（内联展开）-->
+  <div class="ip-edit-area" id="ipEdit" style="display:none">
+    <div class="ip-row"><label for="stIp">IP 地址</label>
+      <input id="stIp" placeholder="如 192.168.1.100" autocomplete="off"></div>
+    <div class="ip-row"><label for="stMask">子网掩码</label>
+      <input id="stMask" placeholder="如 255.255.255.0" autocomplete="off"></div>
+    <div class="ip-row"><label for="stGw">网关</label>
+      <input id="stGw" placeholder="如 192.168.1.1" autocomplete="off"></div>
+    <div class="ip-btns">
+      <button class="pri" id="ipSave" onclick="saveIp()">保存</button>
+      <button class="mini" id="ipDhcp" onclick="useDhcp()">默认（DHCP）</button>
+      <button class="mini" onclick="toggleIpEdit()">取消</button>
+    </div>
+    <div class="note">网关必须与 IP 同网段，否则会被拒绝。<b>配错也不会失联</b>：热点不关，
+      手机连 <code id="apHintSsid">lucky-page-XXXX</code>（密码 <span id="apHintPass">默认 12345678</span>）进 192.168.4.1 改回即可。</div>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-title">连接操作</div>
+  <button class="action-btn primary" id="scanBtn" onclick="scan()">扫描 WiFi</button>
+  <button class="action-btn danger" id="discBtn" onclick="disconnectWifi()" style="display:none">断开 WiFi 连接</button>
+  <button class="action-btn danger" id="reconBtn" onclick="reconnectWifi()" style="display:none">重新连接</button>
+  <div class="hint">扫描前会先断开当前连接（扫描会打断 STA），结果在下方「附近 WiFi」。</div>
+</div>
+
+<div class="card" id="savedCard" style="display:none">
+  <div class="card-title">已保存 WiFi</div>
+  <div id="saved"></div>
+  <div class="note">连不上时会自动换下一个；点「优先」把它提到最前。</div>
+</div>
+
+<div class="card">
+  <div class="card-title">附近 WiFi</div>
+  <div id="aplist" class="empty-hint">点击上方按钮扫描附近 WiFi</div>
+  <div id="scmsg" class="note"></div>
+</div>
+
+<div class="card">
+  <div class="card-title">手动连接</div>
+  <div class="field" style="margin-bottom:8px">
+    <label for="ssid">WiFi 名称（SSID）</label>
+    <input id="ssid" placeholder="输入或粘贴 SSID" autocomplete="off">
+  </div>
+  <div class="field">
+    <label for="pass">密码</label>
+    <input id="pass" type="password" placeholder="开放网络留空" autocomplete="new-password">
+  </div>
+  <button class="pri block" id="connManual" onclick="connect()">保存并连接</button>
+  <div class="msg" id="msg"></div>
+</div>
+
+<div class="zone-danger">
+  <div class="card-head">危险操作</div>
+  <div class="hint">清除后设备回到「仅热点」模式，需要重新填写路由器密码（奖池/模板/标定不受影响）。</div>
+  <div class="row" style="margin-top:10px">
+    <button class="action-btn danger" id="clearSavedBtn" onclick="forget()" style="display:none;margin:0">清除所有已保存 WiFi</button>
+  </div>
+</div>
+
+<div class="msg warn" id="resetEvidence" style="display:none"></div>
+
+<div class="card" id="resetHint">
+  <div class="card-head">恢复出厂网络</div>
+  <div class="hint">🔘 <b>设备上的恢复按钮</b>（GPIO5）：<b>长按恢复按钮 5 秒</b>恢复网络默认配置 ——
+    热点名回默认、热点密码回 <b>12345678</b>、忘记所有已保存的路由器、IP 回 DHCP；
+    <b>不会清掉奖池 / 小票模板 / 标定</b>。</div>
+  <div class="hint" style="margin-top:8px">本机热点始终可用：<b id="apHintSsid2">lucky-page-XXXX</b> → <b>192.168.4.1</b>
+    （密码 <span id="apHintPass2">默认 12345678</span>）。即使路由器密码配错也不会失联。<br>
+    <b>忘记自定义的热点密码</b>：用串口命令 <code>wifi</code> 查看，或 <code>wifi appass</code> 复原默认。</div>
+</div>
+
+</div><footer class="lp-footer"><span><i class="lp-dot"></i>Lucky Studio <span style="color:#bdc8b9">/</span> 幸运翻页机控制台</span><span id="footerMode">本地连接 · 无需外部资源</span></footer></main></div><div class="lp-scrim"></div><nav class="lp-mobile-nav" aria-label="移动端导航"><a href="./index.html"><svg class="lp-icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg><span>抽奖工作台</span></a><a href="./prizes.html"><svg class="lp-icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="8" width="18" height="4" rx="1"/><path d="M5 12v9h14v-9M12 8v13M12 8C5 8 4 2 8 3c3 0 4 5 4 5Zm0 0c7 0 8-6 4-5-3 0-4 5-4 5Z"/></svg><span>奖池管理</span></a><a href="./receipt.html"><svg class="lp-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 3h14v18l-3-2-4 2-4-2-3 2ZM8 8h8M8 12h8M8 16h4"/></svg><span>小票设计</span></a><button aria-label="更多导航" aria-controls="lpSidebar"><svg class="lp-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16"/></svg><span>更多</span></button></nav><script>
+const $=s=>document.querySelector((s[0]==='#'||s[0]==='.')?s:('#'+s));
+const esc=s=>String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+const escJs=s=>String(s==null?'':s).replace(/\\/g,'\\\\').replace(/'/g,"\\'");
+let polling=null, savedCount=0, scanTimer=null, aps=[], apCustom=false, apName='', apPassCustom=false;
+
+function setMsg(kind,text){ if(window.showMsg) showMsg('#msg',kind,text); else { const m=$('#msg'); m.className='msg show '+(kind==='ok'?'ok':'err'); m.textContent=text; } }
+
+async function refresh(){
+  try{
+    const d=await fetch('/api/wifi').then(r=>r.json());
+    const connected=d.sta_connected, configured=d.configured;
+    $('#apName').textContent = d.ap_ssid || '—';
+    $('#apHintSsid').textContent = d.ap_ssid || 'lucky-page-XXXX';
+    $('#apHintSsid2').textContent = d.ap_ssid || 'lucky-page-XXXX';
+    apCustom = !!d.ap_ssid_custom; apName = d.ap_ssid || '';
+    // AP 密码：绝不回显，只显示"默认 / 已自定义"（强制规则 9）
+    apPassCustom = !!d.ap_pass_custom;
+    const passText = apPassCustom ? '已自定义（不显示）' : '默认 12345678';
+    $('#apPassState').textContent = passText;
+    $('#apPassState').style.color = apPassCustom ? 'var(--tx)' : 'var(--tx-dim)';
+    $('#apHintPass').textContent = apPassCustom ? '已自定义' : '默认 12345678';
+    $('#apHintPass2').textContent = apPassCustom ? '已自定义' : '默认 12345678';
+    // 网络复位证据（若曾被复位过，显示次数与时间 —— 排查"没人按却被复位"）
+    const rc = d.net_reset_count|0;
+    if(rc > 0){
+      const ts = d.net_reset_epoch ? new Date(d.net_reset_epoch*1000).toLocaleString() : '时间未知';
+      $('#resetEvidence').style.display='';
+      $('#resetEvidence').innerHTML = `⚠ 网络配置曾被<b>恢复默认 ${rc} 次</b>，最近一次：<b>${ts}</b>。`+
+        `若非你主动长按恢复按钮（或串口 wifi resetnet），请把这条时间告诉我们排查。`;
+    }
+    // STA 状态：已连接（绿）/ 连接中（黄）/ 用户主动断开（黄）/ 未配置（灰）
+    const st = $('#staStatus');
+    if (d.user_disconnected) { st.textContent='已断开（凭据保留）'; st.style.color='var(--w)'; }
+    else if (connected) { st.textContent='已连接'; st.style.color='var(--g)'; }
+    else if (configured) { st.textContent='连接中…'; st.style.color='var(--w)'; }
+    else { st.textContent='未配置（仅热点）'; st.style.color='var(--tx-dim)'; }
+    $('#staIp').textContent = d.ip || '—';
+    $('#staNetmask').textContent = d.netmask || (connected ? '获取中…' : '—');
+    const isStatic = (d.ip_mode === 1);
+    $('#ipModeTag').textContent = (connected || isStatic) ? (isStatic ? '静态' : 'DHCP') : '';
+    $('#ipModeTag').className = 'ip-mode-tag' + (isStatic ? ' static' : '');
+    if(isStatic && !$('#ipEdit').dataset.open){    // 静态参数回填（编辑中不覆盖用户输入）
+      $('#stIp').value = d.static_ip || ''; $('#stMask').value = d.static_mask || '';
+      $('#stGw').value = d.static_gw || '';
+    }
+    $('#sig').textContent = connected ? `${'▮'.repeat(d.bars)}${'▯'.repeat(4-d.bars)} ${d.rssi} dBm` : '—';
+    $('#connectedSsid').textContent = d.ssid || '—';
+    $('#tsync').textContent = d.time_synced ? '✅ 已同步' : '未同步';
+    $('#clients').textContent = d.ap_clients;
+    // 主操作按钮（同 artnet：按状态决定显示哪些，文案随状态变化）
+    $('#discBtn').style.display = (connected || configured) && !d.user_disconnected ? '' : 'none';
+    $('#discBtn').textContent = connected ? '断开 WiFi 连接'
+      : (configured ? '停止连接 ' + (d.ssid || '') : '断开 WiFi 连接');
+    $('#reconBtn').style.display = d.user_disconnected ? '' : 'none';
+    const saved = d.saved||[];
+    savedCount = saved.length;
+    $('#clearSavedBtn').style.display = saved.length ? '' : 'none';
+    $('#savedCard').style.display = saved.length ? '' : 'none';
+    $('#saved').innerHTML = saved.map((n,i)=>
+      `<div class="ap">
+         <div class="ap-main">
+           <span class="wifi-name">${i===0?'★ ':''}${esc(n.ssid)}${n.has_password?' 🔒':'（开放）'}</span>
+           <span class="ap-act">
+             ${i!==0?`<button class="mini" onclick="promote('${escJs(n.ssid)}')">优先</button>`:''}
+             <button class="mini" onclick="removeSaved(${i})">删除</button>
+           </span>
+         </div>
+       </div>`).join('');
+    if(d.last_reason && String(d.last_reason)!=='none' && !connected && !d.user_disconnected){
+      setMsg('warn','上次断开原因：'+d.last_reason);
+    }
+    if(configured && !connected && !d.user_disconnected && !polling){ polling=setInterval(refresh, 3000); }
+    if((connected || d.user_disconnected) && polling){ clearInterval(polling); polling=null; }
+  }catch(e){ $('#staStatus').textContent='读取失败'; }
+}
+
+// ---- 热点名可改（学习 artnet）----
+function toggleApEdit(){
+  const e=$('#apEdit'), show = e.style.display==='none';
+  e.style.display = show ? '' : 'none';
+  if(show){ $('#apSsid').value = apCustom ? apName : ''; $('#apSsid').focus(); }
+}
+async function saveAp(){
+  const v=$('#apSsid').value.trim();
+  if(!v){ setMsg('warn','热点名不能为空（要恢复默认请点「复原默认」）'); return; }
+  const r=await fetch('/api/wifi/ap',{method:'PUT',body:JSON.stringify({ap_ssid:v})});
+  const d=await r.json().catch(()=>({}));
+  if(!r.ok){ setMsg('warn','❌ '+(d.error||'改名失败')); return; }
+  setMsg('ok','✅ 热点名已改为 '+d.ap_ssid+'（已连接的客户端需重连）');
+  $('#apEdit').style.display='none'; refresh();
+}
+async function resetAp(){
+  if(!confirm('恢复默认热点名（lucky-page-XXXX）？')) return;
+  const r=await fetch('/api/wifi/ap',{method:'PUT',body:JSON.stringify({ap_ssid:''})});
+  const d=await r.json().catch(()=>({}));
+  if(!r.ok){ setMsg('warn','❌ '+(d.error||'复原失败')); return; }
+  setMsg('ok','✅ 已恢复默认热点名：'+d.ap_ssid);
+  $('#apEdit').style.display='none'; refresh();
+}
+
+// ---- 热点密码可改（用户要求；密码绝不回显）----
+function toggleApPassEdit(){
+  const e=$('#apPassEdit'), show = e.style.display==='none';
+  e.style.display = show ? '' : 'none';
+  if(show){ $('#apPass').value=''; $('#apPass').focus(); }
+}
+async function saveApPass(){
+  const v=$('#apPass').value;
+  if(v.length < 8){ setMsg('warn','热点密码至少 8 位（WPA2 要求）'); return; }
+  const r=await fetch('/api/wifi/ap',{method:'PUT',body:JSON.stringify({ap_pass:v})});
+  const d=await r.json().catch(()=>({}));
+  if(!r.ok){ setMsg('warn','❌ '+(d.error||'设置失败')); return; }
+  setMsg('ok','✅ 热点密码已更新（已连接热点的手机需用新密码重连）');
+  $('#apPassEdit').style.display='none'; refresh();
+}
+async function resetApPass(){
+  if(!confirm('恢复默认热点密码（12345678）？')) return;
+  const r=await fetch('/api/wifi/ap',{method:'PUT',body:JSON.stringify({ap_pass:''})});
+  const d=await r.json().catch(()=>({}));
+  if(!r.ok){ setMsg('warn','❌ '+(d.error||'复原失败')); return; }
+  setMsg('ok','✅ 已恢复默认热点密码 12345678');
+  $('#apPassEdit').style.display='none'; refresh();
+}
+
+// ---- 静态 IP / DHCP（学习 artnet）----
+function toggleIpEdit(){
+  const e=$('#ipEdit'), show = e.style.display==='none';
+  e.style.display = show ? '' : 'none';
+  if(show){ e.dataset.open='1'; refresh(); } else { delete e.dataset.open; }
+}
+async function saveIp(){
+  const ip=$('#stIp').value.trim(), netmask=$('#stMask').value.trim(), gateway=$('#stGw').value.trim();
+  if(!ip||!netmask||!gateway){ setMsg('warn','IP / 子网掩码 / 网关都要填'); return; }
+  const r=await fetch('/api/wifi/ip',{method:'PUT',body:JSON.stringify({ip,netmask,gateway})});
+  const d=await r.json().catch(()=>({}));
+  if(!r.ok){ setMsg('warn','❌ '+(d.error||'设置失败')); return; }
+  setMsg('ok','✅ 已切换静态 IP（重启后仍生效）');
+  toggleIpEdit(); refresh();
+}
+async function useDhcp(){
+  const r=await fetch('/api/wifi/ip',{method:'PUT',body:JSON.stringify({dhcp:true})});
+  const d=await r.json().catch(()=>({}));
+  if(!r.ok){ setMsg('warn','❌ '+(d.error||'切换失败')); return; }
+  setMsg('ok','✅ 已切回 DHCP（重启后仍生效）');
+  toggleIpEdit(); refresh();
+}
+
+// ---- 断开 / 重连（保留凭据；学习 artnet）----
+async function disconnectWifi(){
+  if(!confirm('断开与路由器的连接？\n已保存的凭据会保留，随时可再连接（热点不受影响，抽奖照常）。')) return;
+  const r=await fetch('/api/wifi/disconnect',{method:'POST'});
+  const d=await r.json().catch(()=>({}));
+  if(!r.ok){ setMsg('warn','❌ '+(d.error||'断开失败')); return; }
+  setMsg('ok','已断开（凭据保留）；点「重新连接」即可恢复');
+  refresh();
+}
+async function reconnectWifi(){
+  const r=await fetch('/api/wifi/reconnect',{method:'POST'});
+  const d=await r.json().catch(()=>({}));
+  if(!r.ok){ setMsg('warn','❌ '+(d.error||'重连失败')); return; }
+  setMsg('ok','已按已保存的最高优先网络发起重连…');
+  refresh();
+}
+
+// ---- 异步扫描 + 轮询（学习 artnet：不再阻塞卡 3 秒）----
+async function scan(){
+  const btn=$('#scanBtn'); btn.disabled=true;
+  $('#scmsg').textContent='扫描中…'; $('#aplist').innerHTML='';
+  $('#aplist').className='';
+  try{
+    const r=await fetch('/api/wifi/scan',{method:'POST'});
+    const d=await r.json().catch(()=>({}));
+    if(!r.ok){ $('#scmsg').textContent='⚠ '+(d.error||'扫描失败'); btn.disabled=false; return; }
+    pollScan();
+  }catch(e){ $('#scmsg').textContent='❌ 扫描异常'; btn.disabled=false; }
+}
+async function pollScan(){
+  clearTimeout(scanTimer);
+  try{
+    const d=await fetch('/api/wifi/scan').then(r=>r.json());
+    if(d.running){ $('#scmsg').textContent='扫描中…'; scanTimer=setTimeout(pollScan,1000); return; }
+    renderAps(d.aps||[], d.error);
+  }catch(e){ $('#scmsg').textContent='❌ 扫描异常'; }
+  finally{ $('#scanBtn').disabled=false; }
+}
+function renderAps(list, err){
+  aps = list;
+  $('#scmsg').textContent = err ? ('⚠ '+err) : (list.length ? `找到 ${list.length} 个网络` : '');
+  if(!list.length){
+    $('#aplist').className='empty-hint';
+    $('#aplist').textContent = '没有扫描到网络（可在下方手工输入名称）';
+    return;
+  }
+  $('#aplist').className='';
+  $('#aplist').innerHTML = list.map((a,i)=>
+    `<div class="ap">
+       <div class="ap-main">
+         <span class="wifi-name">${esc(a.ssid)}${a.secure?' 🔒':''}</span>
+         <span class="wifi-rssi">${a.rssi} dBm ${'▮'.repeat(a.bars)}${'▯'.repeat(4-a.bars)}</span>
+       </div>
+       <div class="ap-act">
+         ${a.secure?`<input class="pw" id="pw_${i}" type="password" placeholder="密码" autocomplete="new-password">`:''}
+         <button class="pri" onclick="connectAp(${i},${a.secure?1:0})">连接</button>
+       </div>
+     </div>`).join('');
+}
+// 一键连接：直接用该行的密码框（学习 artnet，省掉"先填名称再输密码"两步）
+async function connectAp(i, secure){
+  const a = aps[i];
+  if(!a) return;
+  let pass='';
+  if(secure){
+    const el=$('#pw_'+i);
+    pass = el ? el.value : '';
+    if(!pass){ setMsg('warn','请输入「'+a.ssid+'」的密码'); return; }
+  }
+  await doConnect(a.ssid, pass);
+}
+async function doConnect(ssid, pass){
+  const r=await fetch('/api/wifi',{method:'PUT',body:JSON.stringify({ssid,password:pass})});
+  const d=await r.json().catch(()=>({}));
+  if(!r.ok){ setMsg('warn','❌ '+(d.error||'保存失败')); return false; }
+  setMsg('ok','✅ 已保存 '+ssid+'，正在连接…（状态会自动刷新）');
+  $('#pass').value='';
+  refresh();
+  return true;
+}
+async function connect(){
+  const ssid=$('#ssid').value.trim(), pass=$('#pass').value;
+  if(!ssid){ setMsg('warn','请填写 WiFi 名称'); return; }
+  await doConnect(ssid, pass);
+}
+async function promote(ssid){
+  // 重新提交同一网络即可提到最前（保存逻辑：已存在则覆盖并提权）
+  const pass = prompt(`为「${ssid}」输入密码（开放网络留空）：`);
+  if(pass===null) return;
+  const r=await fetch('/api/wifi',{method:'PUT',body:JSON.stringify({ssid,password:pass})});
+  const d=await r.json();
+  setMsg(r.ok?'ok':'warn', r.ok?'已设为最高优先级，正在连接…':'❌ '+(d.error||'失败'));
+  refresh();
+}
+async function removeSaved(i){
+  const last = (savedCount<=1);
+  if(!confirm(last ? '这是最后一个已保存网络。\n删除后会断开路由器、停止自动校时（热点仍可用，抽奖不受影响）。\n\n确定删除？'
+                   : '删除这个已保存网络？'))return;
+  const r=await fetch('/api/wifi',{method:'DELETE',body:JSON.stringify({index:i})});
+  setMsg(r.ok?'ok':'warn', r.ok?'已删除':'❌ 删除失败');
+  refresh();
+}
+async function forget(){
+  if(!confirm('清除所有已保存 WiFi？将断开路由器，回到仅热点模式（抽奖不受影响）。'))return;
+  // ⚠ 必须带 {"all":true}：DELETE 处理器是 fail-safe 的，空 body 会 400 不做事
+  const r=await fetch('/api/wifi',{method:'DELETE',body:JSON.stringify({all:true})});
+  setMsg(r.ok?'ok':'warn', r.ok?'已清除，回到仅热点模式':'❌ 操作失败');
+  refresh();
+}
+refresh();
+</script>
+<script>
+// 页头 chip 与 STA 状态同步（不改动既有 refresh 逻辑，只做镜像）
+setInterval(function(){
+  var st=document.getElementById('staStatus'), chip=document.getElementById('headChip'),
+      txt=document.getElementById('headChipText');
+  if(!st||!chip||!txt) return;
+  var t=st.textContent||'', cls='chip';
+  if(t.indexOf('已连接')===0) cls+=' ok';
+  else if(t.indexOf('已断开')===0) cls+=' warn';
+  else if(t.indexOf('连接中')===0) cls+=' warn';
+  else if(t.indexOf('失败')>=0) cls+=' bad';
+  chip.className=cls; txt.textContent=t.replace(/…$/,'');
+},1200);
+</script>
+<script src="./app.js"></script><script src="./page-enhancements.js"></script></body></html>

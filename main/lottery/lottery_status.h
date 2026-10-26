@@ -21,13 +21,15 @@ struct LotteryStatusSnapshot {
     uint32_t seq;                 // 写序号（偶=稳定；实现上另用独立原子发布）
     uint32_t draw_id;
     uint8_t page;
+    uint8_t current_page;         // 当前设备页（UI 工作台显示）
     uint32_t total_draws;
     uint32_t today_draws;
     char ticket[20];              // 定长，'\0' 结尾
     char prize_name[32];
+    char prize_note[32];          // 奖项副标题（UI 上次开奖卡片）
     char time_str[24];            // "2026-09-29 14:32:07"
 };
-static_assert(sizeof(LotteryStatusSnapshot) <= 128, "快照必须保持小且定长");
+static_assert(sizeof(LotteryStatusSnapshot) <= 160, "快照必须保持小且定长");
 
 /// 双缓冲 + 原子序号的发布器（写=主线程；读=任意线程，无锁）
 class LotteryStatusPublisher {

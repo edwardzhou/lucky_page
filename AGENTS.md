@@ -167,6 +167,10 @@ main/
   page_mapping.{h,cc}       页码→DMX 基础映射（理论基准）
   page_adjust.{h,cc}        每页 int8 行程**偏移**（实际值 = clamp(基础+偏移, 0, 255)）
   assets/spiffs_contents/   6 个页面（index/prizes/receipt/logo/calibrate/wifi）
+                            **UI v2「Lucky Studio」**（2026-10-26 起）：侧栏+顶栏+工作台
+                            卡片布局，app.css 39KB 设计系统 + workspace/prizes/demo/
+                            page-enhancements 四个脚本；demo.js 仅 ?demo=1 生效。
+                            旧 760px 单列布局已废弃，布局断言见 mobile_layout_check.py
   assets/spiffs_contents/app.css  设计系统 v2（6 页唯一来源）：
                             §1 设计令牌（**语义色分离**：brand/ok/warn/danger/info + 表面/尺度）
                             §2 基础层（body/排印/按钮/表单/表格/旧提示类兼容）

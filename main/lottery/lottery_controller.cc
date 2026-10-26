@@ -310,6 +310,7 @@ bool LotteryController::Trigger() {
     last_.valid = true;
     last_.ticket = record_.NextTicket(now);
     last_.prize_name = pool_.tiers()[outcome.result.tier_index].name;
+    last_.prize_note = pool_.tiers()[outcome.result.tier_index].note;
     last_.page = outcome.result.page;
     last_.level = outcome.result.level;
     last_.time_str = DrawRecord::FormatTime(now);
@@ -389,6 +390,8 @@ void LotteryController::UpdateSnapshot() {
     };
     copy_str(snap_.ticket, sizeof(snap_.ticket), last_.ticket);
     copy_str(snap_.prize_name, sizeof(snap_.prize_name), last_.prize_name);
+    copy_str(snap_.prize_note, sizeof(snap_.prize_note), last_.prize_note);
+    snap_.current_page = (uint8_t)Settings::GetInstance().current_page();
     copy_str(snap_.time_str, sizeof(snap_.time_str), last_.time_str);
     status_pub_.Publish(snap_);
 }

@@ -1,0 +1,168 @@
+<!DOCTYPE html><html lang="zh-CN"><head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+
+<style>
+/* 页面特有样式；通用骨架与组件统一走 app.css */
+/* 预览底：棋盘格，白底 logo 也能看出边界 */
+.preview-wrap{
+  background:
+    conic-gradient(#e9edf5 25%, #ffffff 0 50%, #e9edf5 0 75%, #ffffff 0) 0 0/16px 16px;
+  border:1px solid var(--border-strong);border-radius:10px;padding:10px;margin:10px 0;
+}
+canvas{display:block;width:100%;border-radius:var(--r-ctl);image-rendering:pixelated;background:#fff}
+input[type=file]{width:100%;padding:8px}
+input[type=file]::file-selector-button{
+  margin-right:10px;padding:8px 14px;border-radius:8px;border:1px solid var(--border-strong);
+  background:var(--surface-2);color:var(--tx);font:inherit;font-size:13px;cursor:pointer;
+}
+input[type=file]::file-selector-button:hover{background:#263149}
+input[type=range]{width:100%}
+.slider-row{display:flex;align-items:center;gap:10px}
+.slider-row input[type=range]{flex:1 1 auto}
+.slider-val{min-width:38px;text-align:right;font-variant-numeric:tabular-nums;font-weight:600}
+.empty-preview{
+  display:flex;align-items:center;justify-content:center;min-height:96px;
+  color:var(--tx-mute);font-size:13px;border:1px dashed var(--border-strong);border-radius:10px;
+}
+</style>
+<!-- 统一样式（设计系统 v2）：必须在各页内联样式之后 -->
+
+<link rel="stylesheet" href="./app.css"><title>品牌素材 · Lucky Studio</title><meta name="theme-color" content="#194638"><link rel="icon" href="data:,"><script src="./demo.js"></script></head><body class="lp-app lp-page-logo" data-page="logo"><a class="lp-skip" href="#main">跳转到主要内容</a><aside class="lp-sidebar" id="lpSidebar" aria-label="主导航"><a class="lp-brand" href="./index.html"><span class="lp-brand-symbol"><svg class="lp-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m12 3 2.5 6.5L21 12l-6.5 2.5L12 21l-2.5-6.5L3 12l6.5-2.5ZM20 2v4M18 4h4"/></svg></span><span class="lp-brand-name">Lucky Studio<small>幸运翻页机 · 设备控制台</small></span></a><div class="lp-machine"><svg class="lp-icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="6" y="6" width="12" height="12" rx="2"/><path d="M9 2v4M15 2v4M9 18v4M15 18v4M2 9h4M2 15h4M18 9h4M18 15h4"/></svg><div><strong>Lucky Page Controller</strong><small>LOCAL DEVICE WORKSPACE</small></div></div><div class="lp-group-label">运营工作空间</div><nav class="lp-nav"><a href="./index.html"><svg class="lp-icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg><span>抽奖工作台</span></a><a href="./prizes.html"><svg class="lp-icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="8" width="18" height="4" rx="1"/><path d="M5 12v9h14v-9M12 8v13M12 8C5 8 4 2 8 3c3 0 4 5 4 5Zm0 0c7 0 8-6 4-5-3 0-4 5-4 5Z"/></svg><span>奖池管理</span></a><a href="./receipt.html"><svg class="lp-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 3h14v18l-3-2-4 2-4-2-3 2ZM8 8h8M8 12h8M8 16h4"/></svg><span>小票设计</span></a></nav><div class="lp-nav-separator"></div><div class="lp-group-label">设备与品牌</div><nav class="lp-nav"><a href="./logo.html" class="on" aria-current="page"><svg class="lp-icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="3"/><circle cx="8" cy="8" r="1.5"/><path d="m3 17 5-5 5 5 4-4 4 4"/></svg><span>品牌素材</span></a><a href="./calibrate.html"><svg class="lp-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 3v5M5 14v7M12 3v10M12 19v2M19 3v2M19 11v10M2 8h6M9 19h6M16 5h6"/></svg><span>设备标定</span></a><a href="./wifi.html"><svg class="lp-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M2 8a16 16 0 0 1 20 0M5 12a11 11 0 0 1 14 0M8 16a6 6 0 0 1 8 0"/><circle cx="12" cy="20" r=".8"/></svg><span>网络连接</span></a></nav><div class="lp-sidebar-bottom"><div class="lp-demo-note" id="demoNotice" hidden><span>演示环境 · 模拟设备数据</span>本次操作不会驱动设备或打印。<br><button id="resetDemo">重置演示数据</button></div><div class="lp-side-foot"><svg class="lp-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m12 2 9 4v6c0 5-9 10-9 10S3 17 3 12V6ZM8 12l3 3 5-6"/></svg><div><strong>设备本地工作空间</strong><small>Designed for every lucky moment.</small></div></div></div></aside><div class="lp-workspace"><header class="lp-topbar"><div class="lp-breadcrumb"><button class="lp-menu-button" aria-label="打开导航" aria-controls="lpSidebar" aria-expanded="false"><svg class="lp-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16"/></svg></button><span class="lp-breadcrumb-parent">设备工作空间</span><span class="lp-breadcrumb-slash">/</span><span>品牌素材</span></div><div class="lp-topright"><span class="lp-connection" id="connection"><i></i><span>连接设备中</span></span><span class="lp-topline"></span><time id="clock"></time><span class="lp-topinfo" title="设备本地控制台"><svg class="lp-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 11v6M12 7v.1"/></svg></span></div></header><main class="lp-page" id="main"><header class="lp-page-head"><div><div class="lp-eyebrow">BRAND ASSETS</div><h1>品牌素材</h1><p class="lp-subtitle">管理小票票头 Logo，预览真实黑白点阵效果。</p></div><div class="lp-page-actions"><div class="lp-status-slot"><span class="chip" id="logoChip">读取中…</span></div></div></header><div class="lp-content">
+
+
+
+
+<div class="card">
+  <div class="card-head">当前 Logo</div>
+  <div class="kv">
+    <div class="kv-row"><span class="k">状态</span><span class="v" id="current">读取中…</span></div>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-head">上传与预览</div>
+  <div class="field">
+    <label for="file">选择图片（PNG / JPEG）</label>
+    <input type="file" id="file" accept="image/png,image/jpeg">
+    <div class="hint">浏览器侧转成黑白点阵，设备只收 1-bit 栅格（固件无需解码库）。</div>
+  </div>
+  <div class="preview-wrap">
+    <canvas id="cv" width="384" height="120" style="display:none"></canvas>
+    <div class="empty-preview" id="emptyPreview">选择图片后在这里预览二值化效果</div>
+  </div>
+  <div class="field">
+    <label for="threshold">二值化阈值</label>
+    <div class="slider-row">
+      <input type="range" id="threshold" min="1" max="254" value="128" oninput="thv.textContent=this.value;render()">
+      <span class="slider-val" id="thv">128</span>
+    </div>
+    <div class="hint">数值越小，越多像素判为黑点（图更"实"）。</div>
+  </div>
+  <label class="row" style="gap:8px;margin:0">
+    <input type="checkbox" id="dither" onchange="render()"> Floyd–Steinberg 抖动（渐变 logo 更有层次）
+  </label>
+  <div class="hint">目标宽 384 dots（58mm 纸满宽）；建议高度 ≤96（打印 ≈0.4s）。</div>
+  <div class="msg" id="msg"></div>
+</div>
+
+<div class="card">
+  <div class="card-head">说明</div>
+  <div class="hint">
+    Logo 属装饰内容：上传坏数据会被拒绝；设备上 logo 损坏时自动跳过、小票照常打印。<br>
+    上传后请到 <a href="/receipt.html">小票</a> 打开「Logo 票头」开关。
+  </div>
+</div>
+
+<div class="zone-danger">
+  <div class="card-head">危险操作</div>
+  <div class="hint">删除后小票不再打印票头 Logo（其他版式不受影响）。</div>
+  <div class="row" style="margin-top:10px">
+    <button class="danger" onclick="del()">删除 Logo</button>
+  </div>
+</div>
+
+<div class="actbar">
+  <button class="primary block" onclick="upload()">上传并预览</button>
+</div>
+
+</div><footer class="lp-footer"><span><i class="lp-dot"></i>Lucky Studio <span style="color:#bdc8b9">/</span> 幸运翻页机控制台</span><span id="footerMode">本地连接 · 无需外部资源</span></footer></main></div><div class="lp-scrim"></div><nav class="lp-mobile-nav" aria-label="移动端导航"><a href="./index.html"><svg class="lp-icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg><span>抽奖工作台</span></a><a href="./prizes.html"><svg class="lp-icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="8" width="18" height="4" rx="1"/><path d="M5 12v9h14v-9M12 8v13M12 8C5 8 4 2 8 3c3 0 4 5 4 5Zm0 0c7 0 8-6 4-5-3 0-4 5-4 5Z"/></svg><span>奖池管理</span></a><a href="./receipt.html"><svg class="lp-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 3h14v18l-3-2-4 2-4-2-3 2ZM8 8h8M8 12h8M8 16h4"/></svg><span>小票设计</span></a><button aria-label="更多导航" aria-controls="lpSidebar"><svg class="lp-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16"/></svg><span>更多</span></button></nav><script>
+const $=s=>document.querySelector((s[0]==='#'||s[0]==='.')?s:('#'+s));
+let img=null,bw=null,bh=0;
+function show(kind,text){
+  if(window.showMsg) showMsg('#msg',kind,text);
+  else {$('#msg').textContent=text;$('#msg').className='msg show '+(kind==='ok'?'ok':kind==='err'?'err':'warn');}
+}
+// 浏览器侧转换（D14）：固件零解码库，只收 1-bit 栅格
+$('#file').onchange=e=>{
+  const f=e.target.files[0];if(!f)return;
+  const im=new Image();
+  im.onload=()=>{img=im;$('#emptyPreview').style.display='none';$('#cv').style.display='block';render()};
+  im.src=URL.createObjectURL(f);
+};
+function render(){
+  if(!img)return;
+  const cv=$('#cv'),ctx=cv.getContext('2d');
+  const W=384,H=Math.min(256,Math.max(1,Math.round(img.height*W/img.width)));
+  cv.width=W;cv.height=H;cv.style.height=(H*0.8)+'px';
+  ctx.fillStyle='#fff';ctx.fillRect(0,0,W,H);
+  ctx.drawImage(img,0,0,W,H);
+  const src=ctx.getImageData(0,0,W,H);
+  const th=+$('#threshold').value,dither=$('#dither').checked;
+  const err=new Float32Array(W*H);
+  for(let y=0;y<H;y++)for(let x=0;x<W;x++){
+    const i=(y*W+x)*4;
+    const gray=0.299*src.data[i]+0.587*src.data[i+1]+0.114*src.data[i+2]+err[y*W+x];
+    const on=gray<th;                       // 暗=点（热敏打印黑点）
+    const v=on?0:255, diff=gray-v;
+    src.data[i]=src.data[i+1]=src.data[i+2]=v;
+    if(dither){
+      if(x+1<W)err[y*W+x+1]+=diff*7/16;
+      if(y+1<H){const r=(y+1)*W;
+        if(x>0)err[r+x-1]+=diff*3/16;
+        err[r+x]+=diff*5/16;
+        if(x+1<W)err[r+x+1]+=diff*1/16;}
+    }
+  }
+  ctx.putImageData(src,0,0);
+  bw=W;bh=H;
+}
+async function showCurrent(){
+  const r=await fetch('/api/logo');
+  const d=await r.json();
+  $('#current').textContent=d.exists?
+    `${d.width}×${d.height} dots · ${d.bytes} B · 约 ${(d.print_ms/1000).toFixed(1)}s`:
+    '未上传（默认不出票头 Logo）';
+  $('#logoChip').textContent=d.exists?'已启用':'未上传';
+  $('#logoChip').className='chip '+(d.exists?'ok':'');
+  if(!d.exists&&!img){$('#emptyPreview').style.display='flex';}
+}
+async function upload(){
+  if(!bw){show('warn','请先选择图片');return}
+  // 打包 LGO1 头 + MSB 优先 1-bit 栅格
+  const cv=$('#cv'),ctx=cv.getContext('2d');
+  const data=ctx.getImageData(0,0,bw,bh).data;
+  const bytesPerRow=bw/8,total=8+bytesPerRow*bh;
+  const buf=new Uint8Array(total);
+  buf.set([0x4C,0x47,0x4F,0x31],0);          // "LGO1"
+  buf[4]=bw&255;buf[5]=bw>>8;buf[6]=bh&255;buf[7]=bh>>8;
+  for(let y=0;y<bh;y++)for(let x=0;x<bw;x++){
+    const gray=data[(y*bw+x)*4];
+    if(gray<128)buf[8+y*bytesPerRow+(x>>3)]|=0x80>>(x&7);   // MSB 优先
+  }
+  const r=await fetch('/api/logo',{method:'POST',body:buf});
+  const d=await r.json();
+  show(r.ok?'ok':'err',r.ok?`✅ 已上传 ${d.width}×${d.height}（${d.bytes} B）`:'❌ '+(d.error||'上传失败'));
+  if(r.ok&&window.toast) toast('Logo 已上传');
+  showCurrent();
+}
+async function del(){
+  if(!confirm('删除已上传的 Logo？\n小票将不再打印票头 Logo。'))return;
+  await fetch('/api/logo',{method:'DELETE'});
+  show('ok','已删除');
+  if(window.toast) toast('Logo 已删除','warn');
+  showCurrent();
+}
+showCurrent();
+</script>
+<script src="./app.js"></script><script src="./page-enhancements.js"></script></body></html>

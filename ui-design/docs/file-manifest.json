@@ -1,0 +1,116 @@
+{
+  "version": "1.0",
+  "date": "2026-10-26",
+  "files": [
+    {
+      "path": "README.md",
+      "bytes": 3268,
+      "sha256": "4395f89df3bf6687d7ee2ee71311b62608ece15dce544c4d1f2eac6ba1d73dc8"
+    },
+    {
+      "path": "docs/UI-analysis-and-redesign.md",
+      "bytes": 13366,
+      "sha256": "b37cf54f3b65c7866c931e8e5ee45219e2ae339b235ea96b8755d926805b4b38"
+    },
+    {
+      "path": "docs/validation.md",
+      "bytes": 4176,
+      "sha256": "b1055106959eaa992e28e4e1d40223661117c019c43231b1a2f64923643b5c53"
+    },
+    {
+      "path": "index.html",
+      "bytes": 93,
+      "sha256": "f5271b6c74c37add980cbe9bfc18925e3557a0eeebd9e380724a8914524c6a08"
+    },
+    {
+      "path": "preview.html",
+      "bytes": 541362,
+      "sha256": "e2af72392b20b03b232fc763d2e83eec3234a473cfce87bfbca23afbeee49701"
+    },
+    {
+      "path": "reference/original-source.zip",
+      "bytes": 47020,
+      "sha256": "4064ffedbd19fc2a66133039d36e65ed7f5b1e68954a74f19e5bfde22a09873e"
+    },
+    {
+      "path": "spiffs_contents/app.css",
+      "bytes": 39461,
+      "sha256": "51bd6a58bafeca7cf076a7c393fbd4bf213891f6c8e6e2c2989a757f12d3841a"
+    },
+    {
+      "path": "spiffs_contents/app.js",
+      "bytes": 9211,
+      "sha256": "d1039ae20f71c63e5046de5cc63777210e6cee723fd08b04cc370dc8555f52e9"
+    },
+    {
+      "path": "spiffs_contents/calibrate.html",
+      "bytes": 16936,
+      "sha256": "5ea2e8af4b7125010ab78a4403834155de6f52826ee884673a0ce586812bdb2a"
+    },
+    {
+      "path": "spiffs_contents/demo.js",
+      "bytes": 11541,
+      "sha256": "328cc81d87b431ba44c83d0a997d3862ee5345f3ab77fcc418a5d43ae369e3e4"
+    },
+    {
+      "path": "spiffs_contents/index.html",
+      "bytes": 6335,
+      "sha256": "f49ad8159852e43ec8c590755b488fa28bd5719beda46fcee0579cfb3786c9dc"
+    },
+    {
+      "path": "spiffs_contents/logo.html",
+      "bytes": 12432,
+      "sha256": "e6ae00e84be3bb8f9eb20fe979a409430b50242167a3ef300a5f09f3dc096a96"
+    },
+    {
+      "path": "spiffs_contents/page-enhancements.js",
+      "bytes": 3190,
+      "sha256": "e8f68925652741977835dbfddcd7ff4c1d36b84874cb2dff190319fdd5398af2"
+    },
+    {
+      "path": "spiffs_contents/prizes.html",
+      "bytes": 8564,
+      "sha256": "0b3811347424581eb21a774709e0dfc0cb088fe2b85c61211d815c353e41432c"
+    },
+    {
+      "path": "spiffs_contents/prizes.js",
+      "bytes": 7464,
+      "sha256": "5cbaeb71f0b308e195968d3a16c626c42e36015d050fca8665f85dddbd1c53b9"
+    },
+    {
+      "path": "spiffs_contents/receipt.html",
+      "bytes": 46447,
+      "sha256": "93af01f870c0282eec6e9a07e875da6d497ccc219d1f4bb12d952600caba2bb2"
+    },
+    {
+      "path": "spiffs_contents/wifi.html",
+      "bytes": 30263,
+      "sha256": "7d3aef0794204f5947a6025b45273d5988c7b18e843a8f4f223046a8a17cad17"
+    },
+    {
+      "path": "spiffs_contents/workspace.js",
+      "bytes": 11074,
+      "sha256": "55d10657cc84a7eaa248cb7631022c1ce0b872a3d69e4bf7418d7a239c10094b"
+    },
+    {
+      "path": "tools/build_preview.py",
+      "bytes": 2745,
+      "sha256": "094bf62c175b69917c557b3d54ea078219bb30fc0d52ac8402ea7e1273318073"
+    },
+    {
+      "path": "tools/icons.json",
+      "bytes": 1916,
+      "sha256": "57e6eef8cc61947f52b9c1e76eb570e6e65a75d3a6468e353135836053de3bbb"
+    },
+    {
+      "path": "tools/test-demo.mjs",
+      "bytes": 4804,
+      "sha256": "35208e31d7d0ff003f71ad481fdf319d7f4039aa76ad2127ee82f8e46f870751"
+    },
+    {
+      "path": "tools/verify.py",
+      "bytes": 1867,
+      "sha256": "5a002b5f5a31d88386871d2ab1905b56fe3db1c6bac57d440491edece05c7ead"
+    }
+  ]
+}

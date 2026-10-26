@@ -1,0 +1,243 @@
+<!DOCTYPE html><html lang="zh-CN"><head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+
+<style>
+/* 页面特有样式；通用骨架（页头/卡片头/指标/消息条/按钮）统一走 app.css */
+b{color:var(--tx-dim);font-weight:600}
+/* 状态卡：沿用 .status/.it/.k/.v（校验脚本按这四个字段断言），外观对齐 .metrics */
+.status{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}
+.status .it{background:var(--inset);border:1px solid var(--border);border-radius:10px;padding:10px 6px;text-align:center}
+.status .k{display:block;font-size:var(--fs-hint);color:var(--tx-mute);margin-bottom:3px}
+.status .v{display:block;font-size:22px;font-weight:700;font-variant-numeric:tabular-nums;line-height:1.2}
+.status .v.off{color:var(--warn)}
+.status .v.act{color:var(--ok)}
+/* 微调：加/减用语义色（绿=加、红=减），不再是"两种深色" */
+.grid3{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+.grid3 button{min-height:56px;font-size:18px;font-weight:700;border-radius:10px}
+.grid3 button.plus{background:rgba(53,208,127,.14);border-color:rgba(53,208,127,.45);color:#b9f2d4}
+.grid3 button.plus:hover{background:rgba(53,208,127,.22)}
+.grid3 button.minus{background:rgba(229,72,77,.12);border-color:rgba(229,72,77,.45);color:#ffc0c2}
+.grid3 button.minus:hover{background:rgba(229,72,77,.20)}
+.grid3 button:active{transform:scale(.97)}
+.grid4{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}
+.grid4 button{min-height:48px}
+#jumpPage{width:88px;text-align:center}
+#tbl input{width:70px}
+details.card summary{cursor:pointer;color:var(--tx-dim);font-size:13px;list-style:revert}
+details.card[open] summary{margin-bottom:10px;color:var(--tx)}
+</style>
+<!-- 统一样式（设计系统 v2）：必须在各页内联样式之后 -->
+
+<style>
+/* 手机端：状态卡 2×2（4 列太窄）、微调按钮加大 —— 必须放在 app.css 之后 */
+@media(max-width:640px){
+  .status{grid-template-columns:repeat(2,1fr)}
+  .grid3 button{min-height:64px;font-size:20px}
+  .grid4{grid-template-columns:repeat(2,1fr)}
+  #tbl input{width:104px}
+  #tbl th,#tbl td{padding:6px 2px}
+}
+</style>
+<link rel="stylesheet" href="./app.css"><title>设备标定 · Lucky Studio</title><meta name="theme-color" content="#194638"><link rel="icon" href="data:,"><script src="./demo.js"></script></head><body class="lp-app lp-page-calibrate" data-page="calibrate"><a class="lp-skip" href="#main">跳转到主要内容</a><aside class="lp-sidebar" id="lpSidebar" aria-label="主导航"><a class="lp-brand" href="./index.html"><span class="lp-brand-symbol"><svg class="lp-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m12 3 2.5 6.5L21 12l-6.5 2.5L12 21l-2.5-6.5L3 12l6.5-2.5ZM20 2v4M18 4h4"/></svg></span><span class="lp-brand-name">Lucky Studio<small>幸运翻页机 · 设备控制台</small></span></a><div class="lp-machine"><svg class="lp-icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="6" y="6" width="12" height="12" rx="2"/><path d="M9 2v4M15 2v4M9 18v4M15 18v4M2 9h4M2 15h4M18 9h4M18 15h4"/></svg><div><strong>Lucky Page Controller</strong><small>LOCAL DEVICE WORKSPACE</small></div></div><div class="lp-group-label">运营工作空间</div><nav class="lp-nav"><a href="./index.html"><svg class="lp-icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg><span>抽奖工作台</span></a><a href="./prizes.html"><svg class="lp-icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="8" width="18" height="4" rx="1"/><path d="M5 12v9h14v-9M12 8v13M12 8C5 8 4 2 8 3c3 0 4 5 4 5Zm0 0c7 0 8-6 4-5-3 0-4 5-4 5Z"/></svg><span>奖池管理</span></a><a href="./receipt.html"><svg class="lp-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 3h14v18l-3-2-4 2-4-2-3 2ZM8 8h8M8 12h8M8 16h4"/></svg><span>小票设计</span></a></nav><div class="lp-nav-separator"></div><div class="lp-group-label">设备与品牌</div><nav class="lp-nav"><a href="./logo.html"><svg class="lp-icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="3"/><circle cx="8" cy="8" r="1.5"/><path d="m3 17 5-5 5 5 4-4 4 4"/></svg><span>品牌素材</span></a><a href="./calibrate.html" class="on" aria-current="page"><svg class="lp-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 3v5M5 14v7M12 3v10M12 19v2M19 3v2M19 11v10M2 8h6M9 19h6M16 5h6"/></svg><span>设备标定</span></a><a href="./wifi.html"><svg class="lp-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M2 8a16 16 0 0 1 20 0M5 12a11 11 0 0 1 14 0M8 16a6 6 0 0 1 8 0"/><circle cx="12" cy="20" r=".8"/></svg><span>网络连接</span></a></nav><div class="lp-sidebar-bottom"><div class="lp-demo-note" id="demoNotice" hidden><span>演示环境 · 模拟设备数据</span>本次操作不会驱动设备或打印。<br><button id="resetDemo">重置演示数据</button></div><div class="lp-side-foot"><svg class="lp-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m12 2 9 4v6c0 5-9 10-9 10S3 17 3 12V6ZM8 12l3 3 5-6"/></svg><div><strong>设备本地工作空间</strong><small>Designed for every lucky moment.</small></div></div></div></aside><div class="lp-workspace"><header class="lp-topbar"><div class="lp-breadcrumb"><button class="lp-menu-button" aria-label="打开导航" aria-controls="lpSidebar" aria-expanded="false"><svg class="lp-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16"/></svg></button><span class="lp-breadcrumb-parent">设备工作空间</span><span class="lp-breadcrumb-slash">/</span><span>设备标定</span></div><div class="lp-topright"><span class="lp-connection" id="connection"><i></i><span>连接设备中</span></span><span class="lp-topline"></span><time id="clock"></time><span class="lp-topinfo" title="设备本地控制台"><svg class="lp-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 11v6M12 7v.1"/></svg></span></div></header><main class="lp-page" id="main"><header class="lp-page-head"><div><div class="lp-eyebrow">DEVICE CALIBRATION</div><h1>设备标定</h1><p class="lp-subtitle">调整行程偏移，逐页核对机械落点。</p></div><div class="lp-page-actions"><div class="lp-status-slot"><span class="chip" id="pageChip">—</span></div></div></header><div class="lp-content">
+
+
+
+
+<div class="card">
+  <div class="card-head">当前页行程</div>
+  <div class="status">
+    <div class="it"><span class="k">当前页</span><span class="v" id="stCur">–</span></div>
+    <div class="it"><span class="k">基础值</span><span class="v" id="stBase">–</span></div>
+    <div class="it"><span class="k">偏移</span><span class="v off" id="stOff">–</span></div>
+    <div class="it"><span class="k">实际值</span><span class="v act" id="stAct">–</span></div>
+  </div>
+  <div class="hint">实际值 = clamp(基础值 + 偏移, 0, 255)，就是真正下发给 DMX 的行程。</div>
+</div>
+
+<div class="card">
+  <div class="card-head">微调偏移<span class="card-actions"><span class="hint" style="margin:0">只改偏移，不翻页</span></span></div>
+  <div class="grid3">
+    <button class="plus" id="adj_p10" onclick="adjust(10)">+10</button>
+    <button class="plus" id="adj_p5" onclick="adjust(5)">+5</button>
+    <button class="plus" id="adj_p1" onclick="adjust(1)">+1</button>
+    <button class="minus" id="adj_m1" onclick="adjust(-1)">-1</button>
+    <button class="minus" id="adj_m5" onclick="adjust(-5)">-5</button>
+    <button class="minus" id="adj_m10" onclick="adjust(-10)">-10</button>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-head">翻页点动<span class="card-actions"><span class="hint" style="margin:0">真实翻页，请注意机械安全</span></span></div>
+  <div class="grid4">
+    <button id="navPrev" onclick="step(-1)">上页</button>
+    <button id="navNext" onclick="step(1)">下页</button>
+    <button id="navFirst" onclick="gotoPage(0)">首页</button>
+    <button id="navLast" onclick="gotoPage(pages-1)">末页</button>
+  </div>
+  <div class="row" style="margin-top:12px">
+    <label for="jumpPage">跳到第</label>
+    <input type="number" id="jumpPage" min="1" max="30" value="1">
+    <label for="jumpPage">页</label>
+    <button id="jumpBtn" onclick="jump()">点动</button>
+  </div>
+</div>
+
+<div class="msg" id="msg"></div>
+
+<div class="zone-danger">
+  <div class="card-head">危险操作</div>
+  <div class="hint">清零只影响「偏移」，基础映射不受影响；<b>清零全部</b>会丢失所有微调成果。</div>
+  <div class="grid4" style="margin-top:10px">
+    <button id="clrPage" class="danger" onclick="clearPage()">清零本页偏移</button>
+    <button id="clrAll" class="danger" onclick="clearAll()">清零全部偏移</button>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-head">施工判据</div>
+  <div class="hint">
+    ⚠️ <b>30 页可用性判据</b>：逐页点动，若任意两页落到同一格、或落页与目标不符 →
+    该机台<b>不支持 30 页</b>，请到「奖池」页下调总页数（建议 10~16）或更换行程更大的执行器。
+  </div>
+</div>
+
+<!-- 高级：基础映射（默认折叠，避免误用；值来自设备真实映射，不再是公式猜测） -->
+<details class="card" id="advBase">
+  <summary>高级：基础映射（绝对行程值，一般不用改）</summary>
+  <div class="hint">
+    这里是「理论基准」：日常微调用上面的<b>偏移</b>即可。保存会<b>整表覆盖</b>基准映射，
+    只在下述情况使用：重新生成一套均匀行程、或换了执行器。
+  </div>
+  <table id="tbl"><tr><th>页码</th><th>行程值</th><th>点动验证</th></tr></table>
+  <div class="row"><button class="primary" onclick="saveBase()">保存基础映射</button>
+  <button onclick="loadBase().then(renderBaseTable)">重新读取</button></div>
+</details>
+
+<div class="actbar">
+  <button class="primary block" onclick="step(1)">下页并确认</button>
+</div>
+
+</div><footer class="lp-footer"><span><i class="lp-dot"></i>Lucky Studio <span style="color:#bdc8b9">/</span> 幸运翻页机控制台</span><span id="footerMode">本地连接 · 无需外部资源</span></footer></main></div><div class="lp-scrim"></div><nav class="lp-mobile-nav" aria-label="移动端导航"><a href="./index.html"><svg class="lp-icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg><span>抽奖工作台</span></a><a href="./prizes.html"><svg class="lp-icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="8" width="18" height="4" rx="1"/><path d="M5 12v9h14v-9M12 8v13M12 8C5 8 4 2 8 3c3 0 4 5 4 5Zm0 0c7 0 8-6 4-5-3 0-4 5-4 5Z"/></svg><span>奖池管理</span></a><a href="./receipt.html"><svg class="lp-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 3h14v18l-3-2-4 2-4-2-3 2ZM8 8h8M8 12h8M8 16h4"/></svg><span>小票设计</span></a><button aria-label="更多导航" aria-controls="lpSidebar"><svg class="lp-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16"/></svg><span>更多</span></button></nav><script>
+const $=s=>document.querySelector((s[0]==='#'||s[0]==='.')?s:('#'+s));
+let pages=30, mapping=[], offsets=[], cur=0;
+
+function setMsg(kind,text){
+  if(window.showMsg) showMsg('#msg',kind,text);
+  else {$('#msg').textContent=text;$('#msg').className='msg show '+(kind==='ok'?'ok':kind==='err'?'err':'warn');}
+}
+function baseOf(p){ return (p>=0&&p<mapping.length)?mapping[p]:0; }
+function offOf(p){ return (p>=0&&p<offsets.length)?offsets[p]:0; }
+function clampOffset(v){ return Math.max(-128, Math.min(127, v)); }
+
+function paintStatus(){
+  $('#stCur').textContent=(cur+1)+'/'+pages;
+  $('#stBase').textContent=baseOf(cur);
+  const o=offOf(cur);
+  $('#stOff').textContent=(o>0?'+':'')+o;
+  $('#stAct').textContent=Math.max(0,Math.min(255,baseOf(cur)+o));
+  $('#pageChip').textContent='第 '+(cur+1)+' / '+pages+' 页';
+  const jp=$('#jumpPage'); if(jp){ jp.max=pages; if(!jp.value||+jp.value<1||+jp.value>pages) jp.value=cur+1; }
+}
+
+// 基础映射：读设备**真实**值（旧版这里按公式猜，会把真实映射覆盖掉 —— 已修）
+async function loadBase(){
+  const pg=await fetch('/api/pages').then(r=>r.json());
+  pages=pg.total_pages||pages;
+  if(Array.isArray(pg.values)&&pg.values.length) mapping=pg.values.slice();
+  return pg;
+}
+// 偏移：与基础映射一起由 /api/adjust 返回
+async function loadAdjust(){
+  const a=await fetch('/api/adjust').then(r=>r.json());
+  pages=a.total_pages||pages;
+  if(Array.isArray(a.mapping)&&a.mapping.length) mapping=a.mapping.slice();
+  offsets=(Array.isArray(a.offsets)&&Array.isArray(a.offsets[0]))?a.offsets[0].slice():[];
+}
+// 设备当前页只作初值：点动(DirectDrive)不更新它，故之后一律用界面本地游标
+async function loadCurrentPage(){
+  try{
+    const s=await fetch('/api/lottery/status').then(r=>r.json());
+    if(typeof s.current_page==='number'&&s.current_page>=0&&s.current_page<pages) cur=s.current_page;
+  }catch(e){ /* 降级：保持本地游标 0，不影响调整 */ }
+}
+
+function renderBaseTable(){
+  const t=$('#tbl');
+  [...t.querySelectorAll('tr:not(:first-child)')].forEach(r=>r.remove());
+  for(let i=0;i<mapping.length;i++){
+    const tr=document.createElement('tr');
+    tr.innerHTML=`<td>P${i+1}</td>
+      <td><input type="number" id="v${i}" value="${mapping[i]}" min="0" max="255"></td>
+      <td><button class="mini" onclick="gotoPage(${i})">点动</button></td>`;
+    t.appendChild(tr);
+  }
+}
+
+async function adjust(d){
+  const want=clampOffset(offOf(cur)+d);
+  const r=await fetch('/api/adjust',{method:'PUT',
+    body:JSON.stringify({cell:0,page:cur,offset:want})});
+  const j=await r.json().catch(()=>({}));
+  if(!r.ok){ setMsg('err','❌ '+(j.error||'调整失败')); return; }
+  // 一律以服务端返回为准（钳位、实际值都在服务端算，前端不自己推断）
+  offsets[cur]=j.offset; mapping[cur]=j.base;
+  paintStatus(); renderBaseTable();
+  setMsg('ok','已调整 P'+(cur+1)+'：基础 '+j.base+' '+(j.offset>=0?'+':'')+j.offset+' = 实际 '+j.value);
+}
+
+async function gotoPage(p){
+  if(p<0||p>=pages){ setMsg('err','页码越界（1~'+pages+'）'); return; }
+  const r=await fetch('/api/page/goto',{method:'POST',body:JSON.stringify({page:p})});
+  const d=await r.json().catch(()=>({}));
+  if(!r.ok){ setMsg('err','❌ '+(d.error||'状态不允许点动')); return; }
+  cur=p; paintStatus();
+  setMsg('ok','已点动到 P'+(p+1)+'（实际行程 '+$('#stAct').textContent+'），请目视确认落页');
+}
+function step(d){ gotoPage(cur+d); }
+function jump(){
+  const v=+$('#jumpPage').value;
+  if(!(v>=1&&v<=pages)){ setMsg('err','请输入 1~'+pages+' 之间的页码'); return; }
+  gotoPage(v-1);
+}
+
+async function clearPage(){
+  const r=await fetch('/api/adjust/reset',{method:'POST',body:JSON.stringify({cell:0,page:cur})});
+  const j=await r.json().catch(()=>({}));
+  if(!r.ok){ setMsg('err','❌ '+(j.error||'清零失败')); return; }
+  offsets[cur]=0; paintStatus();
+  setMsg('ok','已清零 P'+(cur+1)+' 的偏移（回到基础值 '+baseOf(cur)+'）');
+  if(window.toast) toast('本页偏移已清零','warn');
+}
+async function clearAll(){
+  if(!confirm('清零全部页的行程偏移？\n基础映射不受影响，微调成果会丢失。')) return;
+  const r=await fetch('/api/adjust/reset',{method:'POST',body:JSON.stringify({cell:-1})});
+  const j=await r.json().catch(()=>({}));
+  if(!r.ok){ setMsg('err','❌ '+(j.error||'清零失败')); return; }
+  offsets=offsets.map(()=>0); paintStatus();
+  setMsg('ok','已清零全部偏移（共 '+(j.cleared||offsets.length)+' 页）');
+  if(window.toast) toast('全部偏移已清零','warn');
+}
+
+async function saveBase(){
+  const vals=mapping.map((_,i)=>+$('#v'+i).value);
+  const body=JSON.stringify({values:vals,names:vals.map((_,i)=>'P'+(i+1))});
+  const r=await fetch('/api/page-mapping',{method:'PUT',body});
+  const d=await r.json().catch(()=>({}));
+  if(!r.ok){ setMsg('err','❌ '+(d.error||'保存失败')); return; }
+  mapping=vals; paintStatus();
+  setMsg('ok','✅ 基础映射已保存（重启后生效于归零断言）');
+}
+
+(async function boot(){
+  try{
+    await loadBase();      // 先拿真实基础映射（即使 /api/adjust 失败也能显示基准值）
+    await loadAdjust();    // 再叠加偏移
+    await loadCurrentPage();
+  }catch(e){
+    setMsg('warn','⚠ 读取标定数据失败：'+(e&&e.message?e.message:e));
+  }
+  renderBaseTable(); paintStatus();
+})();
+</script>
+<script src="./app.js"></script><script src="./page-enhancements.js"></script></body></html>

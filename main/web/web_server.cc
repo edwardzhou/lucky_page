@@ -151,9 +151,11 @@ esp_err_t WebServer::LotteryStatusHandler(httpd_req_t* req) {
     cJSON* root = cJSON_CreateObject();
     cJSON_AddStringToObject(root, "state", snap.state < 9 ? kStates[snap.state] : "unknown");
     cJSON_AddNumberToObject(root, "draw_id", snap.draw_id);
+    cJSON_AddNumberToObject(root, "current_page", snap.current_page);
     cJSON* last = cJSON_AddObjectToObject(root, "last");
     cJSON_AddStringToObject(last, "ticket", snap.ticket);
     cJSON_AddStringToObject(last, "prize_name", snap.prize_name);
+    cJSON_AddStringToObject(last, "prize_note", snap.prize_note);
     cJSON_AddStringToObject(last, "time", snap.time_str);
     cJSON_AddNumberToObject(last, "page", snap.page);
     cJSON_AddStringToObject(last, "print",

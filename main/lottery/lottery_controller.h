@@ -21,6 +21,7 @@ struct LastDrawResult {
     bool valid = false;
     std::string ticket;
     std::string prize_name;
+    std::string prize_note;
     int page = 0;
     int level = 0;
     std::string time_str;

@@ -1,58 +1,31 @@
-/* lucky-page 共享前端脚本（6 页共用，避免各页各写一份而漂移）
- *
- * 提供三件事：
- *   1. **按 URL 自动高亮顶部导航**（并补 aria-current="page"）。
- *      为什么用脚本：手写 class="on" 会漏、会漂移 —— v1 实测 6 页只有 2 页有高亮规则，
- *      同一条"小票"链接出现 3 种文案（用户反馈"顶部 menu 选中风格不一致"）。
- *   2. **toast(text, kind)**：短暂成功/失败反馈（2.6s 自动消失）。
- *      为什么需要：v1 保存成功只是卡片底部一行 12px 小字，手机上一滑就看不见 → 用户重复点击。
- *   3. **showMsg(id, kind, text) / hideMsg(id)**：内联消息条（左侧色条 + 语义色）。
- *
- * 外观全部在 app.css（`.msg` / `#toast` / `nav a.on`），本文件只管行为。
- */
-(function () {
-  'use strict';
-
-  /* ---------- 1. 导航高亮 ---------- */
-  var path = location.pathname;
-  if (path === '/' || path === '') path = '/index.html';   // 根路径等价于首页
-  var links = document.querySelectorAll('nav a');
-  for (var i = 0; i < links.length; i++) {
-    if (links[i].getAttribute('href') === path) {
-      links[i].classList.add('on');
-      links[i].setAttribute('aria-current', 'page');
-    }
-  }
-
-  /* ---------- 2. toast ---------- */
-  var toastEl = null;
-  var toastTimer = null;
-  window.toast = function (text, kind) {
-    if (!toastEl) {
-      toastEl = document.createElement('div');
-      toastEl.id = 'toast';
-      toastEl.setAttribute('role', 'status');
-      toastEl.setAttribute('aria-live', 'polite');
-      document.body.appendChild(toastEl);
-    }
-    toastEl.className = kind === 'err' ? 'show err' : kind === 'warn' ? 'show warn' : 'show';
-    toastEl.textContent = text;
-    if (toastTimer) clearTimeout(toastTimer);
-    toastTimer = setTimeout(function () { toastEl.className = ''; }, 2600);
-  };
-
-  /* ---------- 3. 内联消息条 ---------- */
-  function resolve(idOrEl) {
-    return typeof idOrEl === 'string' ? document.getElementById(idOrEl.replace(/^#/, '')) : idOrEl;
-  }
-  window.showMsg = function (idOrEl, kind, text) {
-    var el = resolve(idOrEl);
-    if (!el) return;
-    el.className = 'msg show ' + (kind === 'err' ? 'err' : kind === 'warn' ? 'warn' : 'ok');
-    el.textContent = text;
-  };
-  window.hideMsg = function (idOrEl) {
-    var el = resolve(idOrEl);
-    if (el) el.className = 'msg';
-  };
+/* Shared interactions; no framework or remote dependencies. */
+(function(){
+ 'use strict';
+ const L=window.Lucky=window.Lucky||{},icons={"grid": "<rect x=\"3\" y=\"3\" width=\"7\" height=\"7\" rx=\"1.5\"/><rect x=\"14\" y=\"3\" width=\"7\" height=\"7\" rx=\"1.5\"/><rect x=\"3\" y=\"14\" width=\"7\" height=\"7\" rx=\"1.5\"/><rect x=\"14\" y=\"14\" width=\"7\" height=\"7\" rx=\"1.5\"/>", "gift": "<rect x=\"3\" y=\"8\" width=\"18\" height=\"4\" rx=\"1\"/><path d=\"M5 12v9h14v-9M12 8v13M12 8C5 8 4 2 8 3c3 0 4 5 4 5Zm0 0c7 0 8-6 4-5-3 0-4 5-4 5Z\"/>", "receipt": "<path d=\"M5 3h14v18l-3-2-4 2-4-2-3 2ZM8 8h8M8 12h8M8 16h4\"/>", "image": "<rect x=\"3\" y=\"3\" width=\"18\" height=\"18\" rx=\"3\"/><circle cx=\"8\" cy=\"8\" r=\"1.5\"/><path d=\"m3 17 5-5 5 5 4-4 4 4\"/>", "sliders": "<path d=\"M5 3v5M5 14v7M12 3v10M12 19v2M19 3v2M19 11v10M2 8h6M9 19h6M16 5h6\"/>", "wifi": "<path d=\"M2 8a16 16 0 0 1 20 0M5 12a11 11 0 0 1 14 0M8 16a6 6 0 0 1 8 0\"/><circle cx=\"12\" cy=\"20\" r=\".8\"/>", "arrow": "<path d=\"M5 12h14m-5-5 5 5-5 5\"/>", "refresh": "<path d=\"M20 7v5h-5M4 17v-5h5M5 7a8 8 0 0 1 13-2l2 3M4 16l2 3a8 8 0 0 0 13-2\"/>", "plus": "<path d=\"M12 5v14M5 12h14\"/>", "chip": "<rect x=\"6\" y=\"6\" width=\"12\" height=\"12\" rx=\"2\"/><path d=\"M9 2v4M15 2v4M9 18v4M15 18v4M2 9h4M2 15h4M18 9h4M18 15h4\"/>", "clock": "<circle cx=\"12\" cy=\"12\" r=\"9\"/><path d=\"M12 7v5l3 2\"/>", "box": "<path d=\"m3 6 9-4 9 4v12l-9 4-9-4Zm0 0 9 4 9-4M12 10v12M7 4l10 5\"/>", "power": "<path d=\"M12 3v9M7 6a8 8 0 1 0 10 0\"/>", "menu": "<path d=\"M4 6h16M4 12h16M4 18h16\"/>", "check": "<path d=\"m5 12 4 4L20 5\"/>", "spark": "<path d=\"m12 3 2.5 6.5L21 12l-6.5 2.5L12 21l-2.5-6.5L3 12l6.5-2.5ZM20 2v4M18 4h4\"/>", "printer": "<path d=\"M7 8V3h10v5M7 18H4V8h16v10h-3M7 14h10v7H7ZM17 11h.1\"/>", "shield": "<path d=\"m12 2 9 4v6c0 5-9 10-9 10S3 17 3 12V6ZM8 12l3 3 5-6\"/>", "trend": "<path d=\"M4 19h16M5 14l5-5 4 3 6-8M15 4h5v5\"/>", "trash": "<path d=\"M3 6h18M9 6V3h6v3M6 6l1 15h10l1-15M10 10v7M14 10v7\"/>", "info": "<circle cx=\"12\" cy=\"12\" r=\"9\"/><path d=\"M12 11v6M12 7v.1\"/>"};
+ L.icon=n=>'<svg class="lp-icon" viewBox="0 0 24 24" aria-hidden="true">'+(icons[n]||icons.grid)+'</svg>';
+ L.escape=s=>String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+ L.demo=!!window.LUCKY_DEMO_ACTIVE;
+ L.link=n=>'./'+n+(L.demo?'?demo=1':'');
+ L.connection=(ok)=>{const el=document.getElementById('connection');el.classList.toggle('offline',!ok);el.querySelector('span').textContent=ok?(L.demo?'模拟设备在线':'设备已连接'):'设备连接中断'};
+ let toastTimer;
+ window.toast=(text,kind)=>{let el=document.getElementById('toast');if(!el){el=document.createElement('div');el.id='toast';el.setAttribute('role','status');el.setAttribute('aria-live','polite');document.body.appendChild(el)}el.textContent=text;el.className='show'+(kind==='err'?' err':kind==='warn'?' warn':'');clearTimeout(toastTimer);toastTimer=setTimeout(()=>el.className='',3200)};
+ window.showMsg=(id,kind,text)=>{const el=typeof id==='string'?document.getElementById(id.replace(/^#/,'')):id;if(el){el.className='msg show '+(kind==='err'?'err':kind==='warn'?'warn':'ok');el.textContent=text;el.setAttribute('role',kind==='err'?'alert':'status')}};
+ window.hideMsg=id=>{const el=typeof id==='string'?document.getElementById(id.replace(/^#/,'')):id;if(el)el.className='msg'};
+ L.api=async(url,method='GET',body)=>{const c=new AbortController(),t=setTimeout(()=>c.abort(),7000);try{const opts={method,signal:c.signal};if(body!==undefined){opts.headers={'Content-Type':'application/json'};opts.body=JSON.stringify(body)}const r=await fetch(url,opts);let d;try{d=await r.json()}catch{throw Error('设备响应格式错误')}if(!r.ok||d.ok===false||d.error)throw Error(d.error||'HTTP '+r.status);return d}finally{clearTimeout(t)}};
+ L.confirm=(title,message,action='确认操作')=>new Promise(resolve=>{const d=document.createElement('dialog');d.className='lp-dialog';d.innerHTML='<h3>'+L.escape(title)+'</h3><p>'+L.escape(message)+'</p><div class="lp-dialog-actions"><button value="cancel">取消</button><button class="danger" value="ok">'+L.escape(action)+'</button></div>';document.body.appendChild(d);d.addEventListener('click',e=>{if(e.target.value)d.close(e.target.value)});d.addEventListener('close',()=>{const ok=d.returnValue==='ok';d.remove();resolve(ok)});d.showModal();d.querySelector('button').focus()});
+ document.querySelectorAll('a[href]').forEach(a=>{const href=a.getAttribute('href');if(href.startsWith('#')||a.download)return;const u=new URL(href,document.baseURI);if(/\.html$/.test(u.pathname)&&(!/^https?:/.test(href)||u.origin===location.origin)){const name=u.pathname.split('/').pop();a.setAttribute('href',L.link(name)+u.hash)}});
+ const page=document.body.dataset.page;
+ document.querySelectorAll('.lp-nav a,.lp-mobile-nav a').forEach(a=>{const name=a.getAttribute('href').split('/').pop().split('?')[0];a.classList.toggle('on',name===page+'.html');if(name===page+'.html')a.setAttribute('aria-current','page');else a.removeAttribute('aria-current')});
+ if(L.demo){document.getElementById('demoNotice').hidden=false;document.getElementById('footerMode').textContent='演示数据 · 不代表真实设备状态';document.getElementById('resetDemo').onclick=()=>window.LUCKY_RESET_DEMO&&window.LUCKY_RESET_DEMO()}
+ const aside=document.getElementById('lpSidebar'),menuButton=document.querySelector('.lp-menu-button');let lastFocus=null;
+ function menu(open){if(open&&typeof window.closeSheet==='function')window.closeSheet();document.body.classList.toggle('menu-open',open);menuButton.setAttribute('aria-expanded',String(open));if(open){lastFocus=document.activeElement;aside.querySelector('a').focus()}else if(lastFocus)lastFocus.focus()}
+ menuButton.onclick=()=>menu(!document.body.classList.contains('menu-open'));document.querySelector('.lp-mobile-nav button').onclick=()=>menu(true);document.querySelector('.lp-scrim').onclick=()=>menu(false);
+ document.addEventListener('keydown',e=>{if(!document.body.classList.contains('menu-open'))return;if(e.key==='Escape'){menu(false);return}if(e.key==='Tab'){const focusable=Array.from(aside.querySelectorAll('a,button')).filter(x=>!x.hidden&&x.getClientRects().length),first=focusable[0],last=focusable[focusable.length-1];if(e.shiftKey&&document.activeElement===first){e.preventDefault();last.focus()}else if(!e.shiftKey&&document.activeElement===last){e.preventDefault();first.focus()}}});
+ const clock=()=>{const el=document.getElementById('clock'),now=new Date();el.textContent=now.toLocaleTimeString('zh-CN',{hour12:false});el.dateTime=now.toISOString()};clock();const clockTimer=setInterval(clock,1000);
+ const observed=window.fetch.bind(window);
+ window.fetch=async(input,opts)=>{const path=typeof input==='string'?input:input.url;try{const r=await observed(input,opts);if(path.split('?')[0]==='/api/lottery/status')L.connection(r.ok);return r}catch(e){if(path.startsWith('/api/')&&e.name!=='AbortError')L.connection(false);throw e}};
+ let probeTimer=null;if(page!=='index'){const probe=()=>{if(!document.hidden)fetch('/api/lottery/status').then(r=>L.connection(r.ok)).catch(()=>L.connection(false))};probe();probeTimer=setInterval(probe,10000)}
+ function enhance(root){const props=document.getElementById('propsBtn');if(props){props.setAttribute('aria-controls','panels');props.setAttribute('aria-expanded',String(document.body.classList.contains('sheet-open')));document.getElementById('panels').setAttribute('role','region');document.getElementById('panels').setAttribute('aria-label','元素属性与参数')}root.querySelectorAll('input,select,textarea').forEach(el=>{if(el.labels&&el.labels.length||(el.getAttribute('aria-label')&&!el.dataset.lpAutoLabel))return;const row=el.closest('td,.field,.ip-row,.row');let label=el.previousElementSibling;while(label&&label.tagName!=='LABEL'&&label.tagName!=='INPUT'&&label.tagName!=='SELECT'&&label.tagName!=='TEXTAREA')label=label.previousElementSibling;if(!label||label.tagName!=='LABEL')label=row&&row.querySelector('label');el.setAttribute('aria-label',label?label.textContent.trim():row&&row.dataset.label?row.dataset.label:el.placeholder||el.id||'输入内容');el.dataset.lpAutoLabel='1'});root.querySelectorAll('.msg').forEach(el=>{if(!el.getAttribute('role'))el.setAttribute('role','status')});root.querySelectorAll('#canvas .el').forEach((el,i)=>{el.tabIndex=0;el.setAttribute('role','button');el.setAttribute('aria-label','编辑第 '+(i+1)+' 个元素：'+el.textContent.slice(0,24));if(!el.dataset.keyBound){el.dataset.keyBound='1';el.addEventListener('keydown',e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();el.dispatchEvent(new PointerEvent('pointerdown',{bubbles:true,clientX:el.getBoundingClientRect().left+2,clientY:el.getBoundingClientRect().top+2,pointerId:1}));document.dispatchEvent(new PointerEvent('pointerup',{bubbles:true,pointerId:1}))}})}})}
+ enhance(document);new MutationObserver(()=>enhance(document.querySelector('.lp-content'))).observe(document.querySelector('.lp-content'),{childList:true,subtree:true});
+ window.addEventListener('pagehide',()=>{clearInterval(clockTimer);clearInterval(probeTimer)});
 })();
