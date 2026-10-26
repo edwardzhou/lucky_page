@@ -75,6 +75,11 @@ private:
     static esp_err_t LogoGetHandler(httpd_req_t* req);
     static esp_err_t LogoRawHandler(httpd_req_t* req);   // LGO1 原始字节（画布缩略图用）
     static esp_err_t LogoDeleteHandler(httpd_req_t* req);
+    static esp_err_t SoundsGetHandler(httpd_req_t* req);
+    static esp_err_t SoundsPostHandler(httpd_req_t* req);
+    static esp_err_t SoundsDeleteHandler(httpd_req_t* req);
+    static esp_err_t SoundsRawHandler(httpd_req_t* req);
+    static esp_err_t SoundsPlayHandler(httpd_req_t* req);
     static esp_err_t AssetsGetHandler(httpd_req_t* req);
     static esp_err_t AssetsPostHandler(httpd_req_t* req);
     static esp_err_t AssetsDeleteHandler(httpd_req_t* req);

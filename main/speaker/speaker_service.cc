@@ -2,6 +2,7 @@
 #include "speaker/speaker_service.h"
 
 #include <cstring>
+#include "esp_heap_caps.h"
 #include <vector>
 
 #include "esp_log.h"
@@ -20,6 +21,7 @@ extern "C" const uint8_t welcome_wav_end[] asm("_binary_welcome_wav_end");
 
 #include "speaker/wav_data.h"
 #include "speaker/win_sound.h"
+#include "speaker/sound_store.h"
 
 #define TAG "SpeakerSvc"
 
@@ -38,12 +40,13 @@ namespace speaker {
 
 // 播放请求（值类型经队列投递给常驻播放任务；串行播放，互不打断）
 struct PlayRequest {
-    enum class Mode { kWav, kTone, kChime, kLose };
+    enum class Mode { kWav, kTone, kChime, kLose, kCustom };
     const uint8_t* pcm = nullptr;   // kWav：16bit PCM（welcome.wav data 区，固件嵌入数据指针稳定）
     size_t pcm_bytes = 0;
     uint32_t tone_hz = 0;           // kTone：正弦频率
     uint32_t tone_ms = 0;           // kTone：正弦时长
     int volume_pct = 100;           // 入队时的音量快照（1..100）
+    int role = -1;                  // kCustom：sound_store 角色（welcome/win/lose）
     Mode mode = Mode::kWav;
 };
 // 队列深度：开机欢迎音 + 连续中奖的余量；满了丢弃新请求（保住"正在播放不被打断"）
@@ -165,6 +168,14 @@ bool SpeakerService::Enqueue(const PlayRequest& req) {
 
 bool SpeakerService::PlayWelcome() {
     if (!Init()) return false;
+    // 自定义欢迎音优先（2026-10-26）
+    if (sound_store::ReadInfo(sound_store::kWelcome).custom) {
+        PlayRequest req;
+        req.mode = PlayRequest::Mode::kCustom;
+        req.role = sound_store::kWelcome;
+        req.volume_pct = volume_percent_;
+        return Enqueue(req);
+    }
 
     // 素材自检（嵌入数据损坏只降级，不进播放任务）
     size_t wav_len = (size_t)(welcome_wav_end - welcome_wav_start);
@@ -199,6 +210,13 @@ bool SpeakerService::PlayTone(uint32_t freq_hz, uint32_t duration_ms) {
 
 bool SpeakerService::PlayChime() {
     if (!Init()) return false;
+    if (sound_store::ReadInfo(sound_store::kWin).custom) {
+        PlayRequest req;
+        req.mode = PlayRequest::Mode::kCustom;
+        req.role = sound_store::kWin;
+        req.volume_pct = volume_percent_;
+        return Enqueue(req);
+    }
     // 合成在播放任务里做（≈47KB@24kHz，绝不放栈上，规则 §四-5）
     PlayRequest req;
     req.mode = PlayRequest::Mode::kChime;
@@ -208,6 +226,13 @@ bool SpeakerService::PlayChime() {
 
 bool SpeakerService::PlayLose() {
     if (!Init()) return false;
+    if (sound_store::ReadInfo(sound_store::kLose).custom) {
+        PlayRequest req;
+        req.mode = PlayRequest::Mode::kCustom;
+        req.role = sound_store::kLose;
+        req.volume_pct = volume_percent_;
+        return Enqueue(req);
+    }
     PlayRequest req;
     req.mode = PlayRequest::Mode::kLose;
     req.volume_pct = volume_percent_;
@@ -231,7 +256,20 @@ void SpeakerService::PlayOne(const PlayRequest& a) {
     // 正弦/中奖音模式：软件生成（幅度即素材峰值量级）
     std::vector<int16_t> tone;
     const int16_t* src = nullptr;
-    if (a.mode == PlayRequest::Mode::kChime) {
+    if (a.mode == PlayRequest::Mode::kCustom) {
+        static uint8_t* snd = nullptr;
+        if (snd == nullptr) snd = (uint8_t*)heap_caps_malloc(sound_store::kSlotBytes,
+                                                             MALLOC_CAP_SPIRAM);
+        size_t got = 0;
+        if (snd != nullptr &&
+            sound_store::Load(a.role, snd, sound_store::kSlotBytes, &got) && got >= 2) {
+            tone.resize(got / 2);
+            memcpy(tone.data(), snd, got);
+            src = tone.data();
+        } else {
+            ESP_LOGW(TAG, "自定义音效读取失败（role=%d）→ 本次跳过", a.role);
+        }
+    } else if (a.mode == PlayRequest::Mode::kChime) {
         tone = SynthWinChime(SPEAKER_SAMPLE_RATE);
         src = tone.data();
     } else if (a.mode == PlayRequest::Mode::kLose) {
@@ -344,6 +382,9 @@ void SpeakerService::PlayOne(const PlayRequest& a) {
         break;
     case PlayRequest::Mode::kLose:
         ESP_LOGI(TAG, "落空音效播放完成");
+        break;
+    case PlayRequest::Mode::kCustom:
+        ESP_LOGI(TAG, "自定义音效播放完成（role=%d，%zu 字节 PCM）", a.role, pcm_total);
         break;
     }
 }

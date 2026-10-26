@@ -20,6 +20,9 @@
 #include "printer/logo_store.h"
 #include "printer/asset_store.h"
 #include "printer/page_content.h"
+#include "speaker/sound_decode.h"
+#include "speaker/sound_store.h"
+#include "speaker/speaker_service.h"
 #include "printer/printer_logo.h"
 #include "printer/receipt_defaults.h"
 #include "printer/receipt_layout.h"
@@ -39,7 +42,7 @@ static constexpr int kSyncTimeoutMs = 2000;
 // 所有页面 404 Nothing matches the given URI"，而 API 全部正常 —— 极易误判成 SPIFFS 坏了。
 // 本次因新增 3 条 /api/adjust 路由，把 31+2=33 顶破了原来是 32 的上限。
 // 对策：① 留足余量；② 编译期 static_assert（见 Start() 内），让超限在编译期就暴露。
-static constexpr size_t kMaxUriHandlers = 48;   // 2026-10-26 素材库/页面内容新增 6 条路由
+static constexpr size_t kMaxUriHandlers = 56;   // 2026-10-26 素材库/页面内容/自定义音效
 
 // MainSync：把任务投到主线程并同步取回 string 结果（D23"重读"路径）
 // 单层类型擦除，勿嵌套泛型 lambda（曾把此文件写到 79 万行）
@@ -642,7 +645,6 @@ esp_err_t WebServer::TimeSetHandler(httpd_req_t* req) {
     return SendJson(req, "{\"status\":\"ok\"}");
 }
 
-// ============================ 素材库 / 页面内容（2026-10-26）============================
 namespace {
 std::string QueryValue(httpd_req_t* req, const char* key) {
     char q[160];
@@ -671,6 +673,121 @@ std::string QueryValue(httpd_req_t* req, const char* key) {
 }
 }  // namespace
 
+// ============================ 自定义音效（2026-10-26）============================
+esp_err_t WebServer::SoundsGetHandler(httpd_req_t* req) {
+    auto out = MainSync([]() -> std::string {
+        cJSON* root = cJSON_CreateObject();
+        cJSON* arr = cJSON_AddArrayToObject(root, "roles");
+        static const char* kNames[] = {"欢迎音", "中奖音效", "落空音效"};
+        for (int r = 0; r < sound_store::kRoles; ++r) {
+            sound_store::Info info = sound_store::ReadInfo(r);
+            cJSON* o = cJSON_CreateObject();
+            cJSON_AddStringToObject(o, "role", sound_store::RoleName(r));
+            cJSON_AddStringToObject(o, "name", kNames[r]);
+            cJSON_AddBoolToObject(o, "custom", info.custom);
+            cJSON_AddNumberToObject(o, "duration_ms", (double)info.duration_ms);
+            cJSON_AddNumberToObject(o, "bytes", (double)info.bytes);
+            cJSON_AddItemToArray(arr, o);
+        }
+        return JsonDump(root);
+    });
+    if (out.empty()) return SendError(req, "主线程繁忙", 503);
+    return SendJson(req, out);
+}
+
+esp_err_t WebServer::SoundsPostHandler(httpd_req_t* req) {
+    int role = sound_store::RoleFromName(QueryValue(req, "role"));
+    if (role < 0) return SendError(req, "role 必须是 welcome/win/lose");
+    std::string body = ReadBody(req);
+    auto dec = sound_decode::Decode((const uint8_t*)body.data(), body.size());
+    if (!dec.ok) return SendError(req, dec.error);
+    struct Ctx {
+        bool ok = false;
+    };
+    auto ctx = std::make_shared<Ctx>();
+    MainSync([role, pcm = dec.pcm, ctx]() -> std::string {
+        ctx->ok = sound_store::Save(role, pcm.data(), pcm.size());
+        return ctx->ok ? "ok" : "fail";
+    });
+    if (!ctx->ok) return SendError(req, "音效写入失败", 500);
+    char msg[128];
+    snprintf(msg, sizeof(msg),
+             "{\"status\":\"saved\",\"role\":\"%s\",\"duration_ms\":%u}",
+             sound_store::RoleName(role), (unsigned)dec.duration_ms);
+    return SendJson(req, msg);
+}
+
+esp_err_t WebServer::SoundsDeleteHandler(httpd_req_t* req) {
+    int role = sound_store::RoleFromName(QueryValue(req, "role"));
+    if (role < 0) return SendError(req, "role 必须是 welcome/win/lose");
+    struct Ctx {
+        bool ok = false;
+    };
+    auto ctx = std::make_shared<Ctx>();
+    MainSync([role, ctx]() -> std::string {
+        ctx->ok = sound_store::Erase(role);
+        return ctx->ok ? "ok" : "fail";
+    });
+    if (!ctx->ok) return SendError(req, "恢复默认失败", 500);
+    return SendJson(req, "{\"status\":\"deleted\"}");
+}
+
+esp_err_t WebServer::SoundsRawHandler(httpd_req_t* req) {
+    int role = sound_store::RoleFromName(QueryValue(req, "role"));
+    if (role < 0) return SendError(req, "role 必须是 welcome/win/lose");
+    static uint8_t* pcm = nullptr;
+    if (pcm == nullptr) pcm = (uint8_t*)heap_caps_malloc(sound_store::kSlotBytes, MALLOC_CAP_SPIRAM);
+    if (pcm == nullptr) return SendError(req, "内存不足", 500);
+    struct Ctx {
+        bool ok = false;
+        size_t len = 0;
+    };
+    auto ctx = std::make_shared<Ctx>();
+    MainSync([role, ctx]() -> std::string {
+        ctx->ok = sound_store::Load(role, pcm, sound_store::kSlotBytes, &ctx->len);
+        return ctx->ok ? "ok" : "fail";
+    });
+    if (!ctx->ok) return SendJson(req, "{\"error\":\"no custom sound\"}", 404);
+    // 拼 44 字节 WAV 头供浏览器试听
+    static uint8_t* wav = nullptr;
+    if (wav == nullptr) wav = (uint8_t*)heap_caps_malloc(44 + sound_store::kSlotBytes,
+                                                         MALLOC_CAP_SPIRAM);
+    if (wav == nullptr) return SendError(req, "内存不足", 500);
+    const uint32_t rate = sound_store::kRate;
+    const uint32_t data_len = (uint32_t)ctx->len;
+    auto w32 = [&](size_t off, uint32_t v) {
+        wav[off] = v & 0xFF; wav[off + 1] = (v >> 8) & 0xFF;
+        wav[off + 2] = (v >> 16) & 0xFF; wav[off + 3] = (v >> 24) & 0xFF;
+    };
+    auto w16 = [&](size_t off, uint16_t v) {
+        wav[off] = v & 0xFF; wav[off + 1] = (v >> 8) & 0xFF;
+    };
+    memcpy(wav, "RIFF", 4); w32(4, 36 + data_len); memcpy(wav + 8, "WAVE", 4);
+    memcpy(wav + 12, "fmt ", 4); w32(16, 16); w16(20, 1); w16(22, 1);
+    w32(24, rate); w32(28, rate * 2); w16(32, 2); w16(34, 16);
+    memcpy(wav + 36, "data", 4); w32(40, data_len);
+    memcpy(wav + 44, pcm, data_len);
+    httpd_resp_set_type(req, "audio/wav");
+    httpd_resp_set_hdr(req, "Cache-Control", "no-store");
+    return httpd_resp_send(req, (const char*)wav, (ssize_t)(44 + data_len));
+}
+
+esp_err_t WebServer::SoundsPlayHandler(httpd_req_t* req) {
+    int role = sound_store::RoleFromName(QueryValue(req, "role"));
+    if (role < 0) return SendError(req, "role 必须是 welcome/win/lose");
+    bool ok = false;
+    if (role == sound_store::kWelcome) {
+        ok = speaker::SpeakerService::GetInstance().PlayWelcome();
+    } else if (role == sound_store::kWin) {
+        ok = speaker::SpeakerService::GetInstance().PlayChime();
+    } else {
+        ok = speaker::SpeakerService::GetInstance().PlayLose();
+    }
+    if (!ok) return SendError(req, "播放失败（喇叭未就绪）", 503);
+    return SendJson(req, "{\"status\":\"playing\"}");
+}
+
+// ============================ 素材库 / 页面内容（2026-10-26）============================
 esp_err_t WebServer::AssetsGetHandler(httpd_req_t* req) {
     auto out = MainSync([]() -> std::string {
         cJSON* root = cJSON_CreateObject();
@@ -1392,6 +1509,11 @@ bool WebServer::Start() {
         {"/api/logo", HTTP_GET, LogoGetHandler, nullptr},
         {"/api/logo/raw", HTTP_GET, LogoRawHandler, nullptr},
         {"/api/logo", HTTP_DELETE, LogoDeleteHandler, nullptr},
+        {"/api/sounds", HTTP_GET, SoundsGetHandler, nullptr},
+        {"/api/sounds", HTTP_POST, SoundsPostHandler, nullptr},
+        {"/api/sounds", HTTP_DELETE, SoundsDeleteHandler, nullptr},
+        {"/api/sounds/raw", HTTP_GET, SoundsRawHandler, nullptr},
+        {"/api/sounds/play", HTTP_POST, SoundsPlayHandler, nullptr},
         {"/api/assets", HTTP_GET, AssetsGetHandler, nullptr},
         {"/api/assets", HTTP_POST, AssetsPostHandler, nullptr},
         {"/api/assets", HTTP_DELETE, AssetsDeleteHandler, nullptr},

@@ -41,6 +41,8 @@ set(MAIN_SOURCES
     "${MAIN_DIR}/button_gate.cc"
     "${MAIN_DIR}/printer/page_content.cc"
     "${MAIN_DIR}/printer/asset_store.cc"
+    "${MAIN_DIR}/speaker/sound_decode.cc"
+    "${MAIN_DIR}/speaker/sound_store.cc"
     "${MAIN_DIR}/reset_gesture.cc"
     "${MAIN_DIR}/settings.cc"
     "${MAIN_DIR}/page_mapping.cc"

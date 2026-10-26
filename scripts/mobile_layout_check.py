@@ -25,7 +25,7 @@ from playwright.async_api import async_playwright
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent / "main" / "assets" / "spiffs_contents"
 PORT = 8898
-PAGES = ["index", "prizes", "receipt", "pages", "logo", "calibrate", "wifi"]
+PAGES = ["index", "prizes", "receipt", "pages", "logo", "calibrate", "wifi", "sound"]
 SHOTS = pathlib.Path("/tmp/lucky-mobile-v2")
 
 passed, failed = [], []

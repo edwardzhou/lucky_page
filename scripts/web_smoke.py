@@ -15,7 +15,7 @@ from playwright.sync_api import sync_playwright
 
 IP = sys.argv[1] if len(sys.argv) > 1 else "192.168.5.71"
 BASE = f"http://{IP}"
-PAGES = ["index", "prizes", "receipt", "pages", "logo", "calibrate", "wifi"]
+PAGES = ["index", "prizes", "receipt", "pages", "logo", "calibrate", "wifi", "sound"]
 passed, failed = [], []
 
 
