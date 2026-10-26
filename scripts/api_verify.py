@@ -82,7 +82,7 @@ print(f"=== lucky-page HTTP API 验收 @ {ROOT} ===\n")
 
 print("① 静态页面（通配匹配修复的回归项）")
 for page in ["/", "/index.html", "/prizes.html", "/receipt.html", "/logo.html",
-             "/calibrate.html", "/wifi.html"]:
+             "/calibrate.html", "/wifi.html", "/pages.html", "/sound.html"]:
     code, data, _ = call("GET", page)
     check(f"GET {page} → 200 且是 HTML", code == 200 and b"<html" in data.lower(),
           f"HTTP {code}")

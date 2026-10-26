@@ -18,6 +18,8 @@
  const roleName=key=>(ROLES.find(r=>r.key===key)||{}).name||key;
  const fmtMs=ms=>Math.round(Number(ms)||0)+' ms';
  const fmtBytes=n=>{n=Math.max(0,Math.round(Number(n)||0));return n<1024?n+' B':(n/1024).toFixed(1)+' KB'};
+ // 状态行额外带上精确字节数（接口 bytes 为 PCM 字节）
+ const fmtSize=n=>{n=Math.max(0,Math.round(Number(n)||0));return n<1024?n+' B':(n/1024).toFixed(1)+' KB ('+n+' B)'};
  const fmtSec=s=>String(Math.round((Number(s)||0)*1000)/1000);
  const cardMsg=(role,kind,text)=>showMsg('msg-'+role,kind,text);
  const hideCardMsg=role=>hideMsg('msg-'+role);
@@ -37,7 +39,7 @@
        dur.textContent='—';bytes.textContent='—';
      }else if(c.custom){
        chipEl.textContent='自定义';chipEl.className='chip ok';
-       dur.textContent=fmtMs(c.duration_ms);bytes.textContent=fmtBytes(c.bytes);
+       dur.textContent=fmtMs(c.duration_ms);bytes.textContent=fmtSize(c.bytes);
      }else{
        chipEl.textContent='默认音效';chipEl.className='chip';
        dur.textContent='内置默认';bytes.textContent='—';
@@ -181,6 +183,7 @@
    const c=state.roles[role];
    if(!c)return;
    hideCardMsg(role);
+   stopAudio();                         // 切换角色试听时先停掉上一段
    const ctrl=new AbortController(),timer=setTimeout(()=>ctrl.abort(),8000);
    try{
      let r;
