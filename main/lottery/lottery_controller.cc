@@ -246,6 +246,15 @@ void LotteryController::OnScheduleDone() {
                          ? DrawRecord::FormatDate(p.epoch + (time_t)settings.validity_days() * 86400)
                          : "";
 
+        // 抽奖音效（2026-10-25）：翻页完成 → 先播音效 → 音效播完才开始打印
+        // （用户要求时序，2026-10-25 第六轮）；中奖=上行琶音，落空=下行双音；
+        // 回调由 Application 注入（未注入=静默），内部自行降级（规则 5/7）。
+        // sound_lead_ms_：音效+段间隔断的总时长，由 Application 注入（测试为 0）。
+        if (last_.valid && sound_cb_) {
+            sound_cb_(!p.is_lose);
+            if (sound_lead_ms_ > 0) vTaskDelay(pdMS_TO_TICKS(sound_lead_ms_));
+        }
+
         if (!printer_.Enqueue(tmpl, p)) {
             ESP_LOGE(TAG, "打印队列满（上一张未完成），跳过打印");
             last_.print = PrintOutcome::kSkipped;
@@ -263,6 +272,14 @@ void LotteryController::OnScheduleDone() {
 // ============================================================================
 // Trigger：抽奖主流程（D2 先抽奖 → 再翻到该页；D4 单飞）
 // ============================================================================
+void LotteryController::SetSoundCallback(std::function<void(bool)> cb) {
+    sound_cb_ = std::move(cb);
+}
+
+void LotteryController::SetSoundLeadMs(int ms) {
+    sound_lead_ms_ = ms > 0 ? ms : 0;
+}
+
 bool LotteryController::Trigger() {
     if (!IsDrawable()) {
         ESP_LOGW(TAG, "状态 %s，忽略触发（单飞 D4）", StateName());

@@ -25,6 +25,7 @@
 #include "lottery/time_source.h"
 #include "wifi/wifi_config.h"
 #include "wifi/wifi_manager.h"
+#include "speaker/speaker_service.h"
 #include "printer/receipt_defaults.h"
 #include "printer/receipt_render.h"
 #include "printer/receipt_template.h"
@@ -695,6 +696,16 @@ static void CmdPrizes() {
     }
 }
 
+// sndplay —— 重播开机欢迎音（喇叭真机验证用，2026-10-25）
+static void CmdSndPlay() {
+    auto& svc = speaker::SpeakerService::GetInstance();
+    if (!svc.PlayWelcome()) {
+        printf("播放失败：I2S 未就绪或素材损坏（看 SpeakerSvc 日志）\n");
+        return;
+    }
+    printf("欢迎音播放中（BCLK=G15 LRCK=G16 DOUT=G7）\n");
+}
+
 static void CmdGbtest(const char* text) {
     auto r = GbkEncoder::Encode(text);
     printf("UTF-8(%zu B) → GBK(%zu B): ", strlen(text), r.bytes.size());
@@ -719,7 +730,8 @@ static void ConsoleTask(void*) {
             printf("draw|ptest|pstatus|pdump|preceipt [win|lose|<页码>]|prizes|gbtest <中文>\n"
                    "pflow off|cts|rts|both  pswap  pprobe  ppins  pscan\n"
                    "ptmpl <json>  pdemo 1|2|3  ptime <epoch>  wifi [scan|set|off]\n"
-                   "httptest [GET|POST|PUT|DELETE] [path]  （板内自测 WebServer）\n");
+                   "httptest [GET|POST|PUT|DELETE] [path]  （板内自测 WebServer）\n"
+                   "sndplay  sndwin  sndlose  sndtest [Hz] [ms]  sndvol <1-100>\n");
         } else if (strcmp(line, "draw") == 0) CmdDraw();
         else if (strcmp(line, "psample") == 0) CmdPsample();
         else if (strcmp(line, "ptest") == 0) CmdPtest();
@@ -751,6 +763,27 @@ static void ConsoleTask(void*) {
         else if (strncmp(line, "pbg", 3) == 0) CmdBgTest(line[3] ? line + 4 : "");
         else if (strcmp(line, "prizes") == 0) CmdPrizes();
         else if (strncmp(line, "gbtest ", 7) == 0) CmdGbtest(line + 7);
+        else if (strcmp(line, "sndplay") == 0) CmdSndPlay();
+        else if (strcmp(line, "sndlose") == 0) {
+            if (!speaker::SpeakerService::GetInstance().PlayLose())
+                printf("播放失败：I2S 未就绪（看 SpeakerSvc 日志）\n");
+            else printf("落空音效播放中\n");
+        } else if (strcmp(line, "sndwin") == 0) {
+            if (!speaker::SpeakerService::GetInstance().PlayChime())
+                printf("播放失败：I2S 未就绪（看 SpeakerSvc 日志）\n");
+            else printf("中奖音效播放中\n");
+        }
+        else if (strncmp(line, "sndvol ", 7) == 0) {
+            int v = atoi(line + 7);
+            speaker::SpeakerService::GetInstance().SetVolume(v);
+            printf("音量 → %d%%（再 sndtest/sndplay 对比失真是否随幅度变化）\n",
+                   speaker::SpeakerService::GetInstance().volume_percent());
+        } else if (strncmp(line, "sndtest", 7) == 0) {
+            unsigned hz = 440, ms = 2000;
+            sscanf(line + 7, "%u %u", &hz, &ms);
+            speaker::SpeakerService::GetInstance().PlayTone(hz, ms);
+            printf("正弦测试音 %uHz %ums 播放中\n", hz, ms);
+        }
         else printf("未知命令（help 查看）\n");
         fflush(stdout);
     }

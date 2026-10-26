@@ -93,4 +93,30 @@ static_assert(RESET_BUTTON_LONG_MS == 5000, "恢复按钮长按阈值按需求�
 // （SD 卡引脚块已删除：lucky-page 从未实现 SD，logo/奖池走 SPIFFS；
 //   且原 10/11/9/12 与现在的打印机 9/10/11 冲突）
 
+// ===== 欢迎音喇叭（I2S → MAX98357A 数字功放，2026-10-25）=====
+// 引脚对齐 xiaozhi-esp32 小智 S3（bread-compact-wifi）喇叭配置（specs/2026-10-25）：
+//   ESP32 BCLK=G15 → 功放 BCLK；LRCK=G16 → 功放 LRC；DOUT=G7 → 功放 DIN
+//   功放 SD 脚悬空 = (L+R)/2 单声道输出，3V3/GND 供电
+// 格式：16kHz / 16bit / 单声道（素材 main/assets/welcome.wav，tools/make_welcome_wav.sh）
+#define SPEAKER_I2S_BCLK_PIN   GPIO_NUM_15
+#define SPEAKER_I2S_LRCK_PIN   GPIO_NUM_16
+#define SPEAKER_I2S_DOUT_PIN   GPIO_NUM_7
+#define SPEAKER_SAMPLE_RATE    24000
+
+// 喇叭三脚冲突护栏（新增功能脚必须核对全表，规则见 §1.5/§1.7）
+#define SPEAKER_PINS_OK(p) \
+    ((p) != PRINTER_TX_PIN && (p) != PRINTER_RX_PIN && (p) != PRINTER_FLOW_PIN && \
+     (p) != DMX512_TX_PIN && (p) != DMX512_RX_PIN && (p) != DMX512_DE_PIN && \
+     (p) != BUTTON_MODULE_GPIO && (p) != RESET_BUTTON_GPIO && (p) != IR_RECEIVER_GPIO && \
+     (p) != GPIO_NUM_19 && (p) != GPIO_NUM_20 && (p) != GPIO_NUM_43 && (p) != GPIO_NUM_44)
+static_assert(SPEAKER_PINS_OK(SPEAKER_I2S_BCLK_PIN), "喇叭 BCLK 与现有外设/禁用脚冲突");
+static_assert(SPEAKER_PINS_OK(SPEAKER_I2S_LRCK_PIN), "喇叭 LRCK 与现有外设/禁用脚冲突");
+static_assert(SPEAKER_PINS_OK(SPEAKER_I2S_DOUT_PIN), "喇叭 DOUT 与现有外设/禁用脚冲突");
+static_assert(SPEAKER_I2S_BCLK_PIN != SPEAKER_I2S_LRCK_PIN &&
+              SPEAKER_I2S_BCLK_PIN != SPEAKER_I2S_DOUT_PIN &&
+              SPEAKER_I2S_LRCK_PIN != SPEAKER_I2S_DOUT_PIN,
+              "喇叭三个 I2S 脚不能互相同脚");
+static_assert(SPEAKER_SAMPLE_RATE == 24000, "采样率须与 welcome.wav 素材一致（24kHz，对齐小智）");
+
+
 #endif  // _ESP32S3_LUCKY_CONFIG_H_

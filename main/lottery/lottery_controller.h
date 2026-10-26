@@ -2,6 +2,7 @@
 #define _LOTTERY_CONTROLLER_H_
 
 #include <atomic>
+#include <functional>
 #include <memory>
 
 #include <esp_timer.h>
@@ -62,6 +63,16 @@ public:
     /// 触发一次抽奖。非 IsDrawable 时返回 false（单飞，D4）。
     bool Trigger();
 
+    // 抽奖音效回调（表现层注入，2026-10-25）：参数 win=true 中奖音 / false 落空音。
+    // 控制器不依赖具体发声硬件（规则 5，也是测试宿主可链接的前提——
+    // speaker_service 是 I2S 驱动层不上单测宿主）。未注入 = 静默跳过；
+    // 回调内部自行降级，不影响抽奖/打印。
+    void SetSoundCallback(std::function<void(bool win)> cb);
+
+    // 音效先行时长（ms，2026-10-25 用户要求：翻页完成 → 播音效 → 音效播完才打印）。
+    // Application 注入实际值；0 = 不等待（测试宿主默认，避免拖慢单测）
+    void SetSoundLeadMs(int ms);
+
     /// MotionEngine 管线空回调（Application schedule 到主线程后调用）
     void OnScheduleDone();
 
@@ -77,6 +88,8 @@ public:
     int homing_retry_count() const { return homing_retry_; }
 
 private:
+    std::function<void(bool)> sound_cb_;   // 抽奖音效（Application 注入，win 参数区分中/落空）
+    int sound_lead_ms_ = 0;                // 音效先行时长（打印延后；默认 0 不等待）
     // ---- 归零（§5.5） ----
     bool CheckPrerequisites();   // 映射覆盖全页 + 互异 + 最小间隔 + 行程范围（D21）
     void BeginHoming();

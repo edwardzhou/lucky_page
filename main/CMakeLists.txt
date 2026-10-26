@@ -5,6 +5,9 @@ file(GLOB PRINTER_SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/printer/*.cc")
 file(GLOB LOTTERY_SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/lottery/*.cc")
 file(GLOB WIFI_SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/wifi/*.cc")
 file(GLOB WEB_SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/web/*.cc")
+# 喇叭（I2S 欢迎音，2026-10-25）：speaker_service 是驱动层不上测试宿主，
+# 纯逻辑 wav_data.cc 由 test_apps 单独收录
+file(GLOB SPEAKER_SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/speaker/*.cc")
 
 set(BOARD_SOURCES
     "${CMAKE_CURRENT_SOURCE_DIR}/boards/common/button.cc"
@@ -28,11 +31,14 @@ idf_component_register(
         ${LOTTERY_SOURCES}
         ${WIFI_SOURCES}
         ${WEB_SOURCES}
+        ${SPEAKER_SOURCES}
         ${BOARD_SOURCES}
     # 点阵字库嵌入固件（图形模式用；放固件里而不是 SPIFFS，
     # 因为烧固件/OTA 会重写 SPIFFS 资源分区，用户素材会丢 —— 见评审 G3）
+    # welcome.wav：开机欢迎音（welcome.ogg 一次性转换，tools/make_welcome_wav.sh）
     EMBED_FILES
         "assets/font24.bin"
+        "assets/welcome.wav"
     INCLUDE_DIRS
         "."
     REQUIRES
@@ -47,6 +53,8 @@ idf_component_register(
         esp_driver_gpio
         # console_cmd.cc 的 USB-Serial-JTAG VFS 行结尾设置（v6 起为独立驱动组件）
         esp_driver_usb_serial_jtag
+        # 喇叭 I2S 新驱动（v6 起独立组件，speaker_service.cc 用）
+        esp_driver_i2s
         dw_printer
         button
         esp_wifi

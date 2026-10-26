@@ -32,6 +32,11 @@ set(DWPRINTER_SOURCES
     "${DWPRINTER_DIR}/raw_printer_qr.c"
 )
 
+# 喇叭纯逻辑层（wav_data.cc 解析 EMBED 的 WAV；speaker_service 是 I2S 驱动层不上宿主）
+set(SPEAKER_SOURCES
+    "${MAIN_DIR}/speaker/wav_data.cc"
+    "${MAIN_DIR}/speaker/win_sound.cc")
+
 set(MAIN_SOURCES
     "${MAIN_DIR}/button_gate.cc"
     "${MAIN_DIR}/reset_gesture.cc"
@@ -45,7 +50,7 @@ idf_component_register(
     SRCS ${MOTION_SOURCES} ${DMX_SOURCES}
          ${LOTTERY_SOURCES}
         ${WIFI_SOURCES} ${PRINTER_SOURCES}
-         ${TEST_SOURCES} ${MAIN_SOURCES} ${DWPRINTER_SOURCES}
+         ${TEST_SOURCES} ${MAIN_SOURCES} ${SPEAKER_SOURCES} ${DWPRINTER_SOURCES}
     # 点阵字库（图形模式）：测试宿主也要嵌入，否则链接时找不到 _binary_font24_bin_start
     EMBED_FILES
         "../../main/assets/font24.bin"

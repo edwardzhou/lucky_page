@@ -16,6 +16,7 @@
 #include "motion/action_group.h"
 #include "motion/action_paging.h"
 #include "printer/printer_uart.h"
+#include "speaker/speaker_service.h"
 #include "page_adjust.h"
 #include "page_mapping.h"
 #include "settings.h"
@@ -336,6 +337,16 @@ void Application::Start() {
     controller_ =
         std::make_unique<LotteryController>(*engine_, *printer_service_, *pool_);
 
+    // 抽奖音效（2026-10-25）：表现层注入——控制器不依赖发声硬件（规则 5）
+    controller_->SetSoundLeadMs(speaker::kSoundLeadMs);
+    controller_->SetSoundCallback([](bool win) {
+        if (win) {
+            speaker::SpeakerService::GetInstance().PlayChime();
+        } else {
+            speaker::SpeakerService::GetInstance().PlayLose();
+        }
+    });
+
     InitButton();
 
     // 主循环任务
@@ -351,6 +362,10 @@ void Application::Start() {
     } else {
         ESP_LOGW(TAG, "WiFi 未启动，跳过 WebServer（串口命令与抽奖不受影响）");
     }
+
+    // 开机欢迎音（I2S 喇叭，2026-10-25）：异步播放不阻塞启动；
+    // 喇叭属"锦上添花"：I2S 失败/素材损坏只打日志（SpeakerService 内部降级，规则 7）
+    speaker::SpeakerService::GetInstance().PlayWelcome();
 
     ESP_LOGI(TAG, "[7/7] Application 启动完成");
 }
