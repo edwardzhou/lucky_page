@@ -46,6 +46,7 @@ TTL 热敏打印机出票；Web 页面配置奖池/小票版式/Logo/标定/WiFi
 | 控制台 | **USB-Serial-JTAG** `/dev/cu.usbmodem1433101`（**会重枚举**，换口后先 `ls /dev/cu.*`） |
 | 板载 USB-UART 桥 | `/dev/cu.usbserial-*`（接 G43/G44，**禁止占用**） |
 | 串口读不到日志时 | 先 `python -m esptool --chip esp32s3 -p <PORT> run` 硬复位，再**立刻**读（启动日志只在前 1 秒） |
+| **控制台逐键输入** | 2026-10-26 起控制台按"累积到换行"执行（曾因 USB-JTAG VFS 非阻塞把半行当命令 → 每敲一键回「未知命令」，评审 38）。脚本发命令用 `python3 scripts/serial_cmd.py <命令>` 最稳（自动处理打开端口复位/首行污染） |
 | **设备"不可达"先查两件事** | ① **当前烧的是哪套固件**：跑完 `run_tests.py`（片上单测宿主）若不烧回主固件，设备**没有 Web、没有 STA 重连、控制台也不认 `wifi/rstbtn`**（日志里只有 `test_*.cc:PASS` + `Returned from app_main`）→ 表现就是"完全不可达"。② **开发机是否还在同一 WiFi**：本机曾漫游到别的网络（192.168.3.x）却一直在 ping 192.168.0.252。③ 打开串口若未显式 `dtr=False; rts=False`，会因拉了 EN/GPIO0 把芯片**带进下载模式**（应用停机、串口全静默）——`esptool run` 可复位回来 |
 
 ### 1.2 打印机（UART2）

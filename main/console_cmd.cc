@@ -715,16 +715,15 @@ static void CmdGbtest(const char* text) {
 }
 
 // ============================ 任务与分发 ============================
-static void ConsoleTask(void*) {
-    char line[1024];   // 长模板 JSON 用
-    while (true) {
-        // 控制台是 USB-Serial-JTAG 时 fgets 无输入会立刻返回 NULL，必须让出 CPU
-        if (fgets(line, sizeof(line), stdin) == nullptr) {
-            vTaskDelay(pdMS_TO_TICKS(20));
-            continue;
-        }
-        if (line[0] == '\0' || line[0] == '\n') continue;
-        line[strcspn(line, "\r\n")] = '\0';
+// 处理一整行命令（ConsoleTask 只在收到换行后才调用）
+static void ProcessLine(char* line) {
+    // 修剪行尾 CR/LF 与空格：不同输入方式（逐键回车 vs 一次性写入 "cmd\n"）
+    // 到达这里时可能带换行符，不修剪会被 strcmp 判成未知命令（真机事故 2026-10-26）
+    size_t n = strlen(line);
+    while (n > 0 && (line[n - 1] == '\r' || line[n - 1] == '\n' || line[n - 1] == ' '))
+        line[--n] = '\0';
+    if (n == 0) return;
+    {
 
         if (strcmp(line, "help") == 0) {
             printf("draw|ptest|pstatus|pdump|preceipt [win|lose|<页码>]|prizes|gbtest <中文>\n"
@@ -786,6 +785,43 @@ static void ConsoleTask(void*) {
         }
         else printf("未知命令（help 查看）\n");
         fflush(stdout);
+    }
+}
+
+// 逐字符累积到换行才执行（2026-10-26 真机事故：终端逐键发送时，USB-Serial-JTAG
+// 的 VFS 非阻塞，fgets 读到一个字符后下一次 read 返回 0 被当作 EOF →
+// 半个单词就被当成一条命令 → 每敲一个键都回「未知命令」。改为自己累积：
+// 只有收到 \r/\n 才分发；EOF/无数据只让出 CPU；支持退格回显。）
+static void ConsoleTask(void*) {
+    char line[1024];   // 长模板 JSON 用
+    size_t len = 0;
+    while (true) {
+        int c = fgetc(stdin);
+        if (c == EOF) {
+            vTaskDelay(pdMS_TO_TICKS(10));
+            continue;
+        }
+        if (c == '\r' || c == '\n') {
+            if (len == 0) continue;
+            line[len] = '\0';
+            ProcessLine(line);
+            len = 0;
+            continue;
+        }
+        if (c == 0x7f || c == 0x08) {          // 退格：删一个字符并回显
+            if (len > 0) {
+                len--;
+                printf("\b \b");
+                fflush(stdout);
+            }
+            continue;
+        }
+        if (len < sizeof(line) - 1) {
+            line[len++] = (char)c;
+        } else {
+            len = 0;                            // 超长行丢弃，避免状态错乱
+            printf("\n命令过长，已丢弃\n");
+        }
     }
 }
 
