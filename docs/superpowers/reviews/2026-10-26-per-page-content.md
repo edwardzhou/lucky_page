@@ -40,6 +40,11 @@
 - `web_smoke.py` 36/36；`mobile_layout_check.py` 80/80（7 页）；
   `api_verify.py` 全过（默认不出纸）。
 - 设备截图：`/tmp/dev_pages_new.png`（页面内容页）、`/tmp/dev_receipt_new.png`。
+- **模板端到端（含页面元素）**：保存 canvas 模板
+  `[page_image, page_text, line, feed]` → 回读块类型逐一正确、生效模式=canvas →
+  `?page=0` 预览含页面文字；随后按快照整体还原（flow 15 块 / canvas 18 块 / banner 9 块，
+  生效模式 flow）并复核。还原顺序教训：三槽按 0→1→2 写会把生效模式留成最后一个槽，
+  必须最后再写一次原生效槽。
 
 ## 遗留
 
