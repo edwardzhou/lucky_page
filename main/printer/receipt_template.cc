@@ -4,7 +4,8 @@
 
 namespace {
 
-const char* kBlockTypes[] = {"line", "separator", "qr", "logo", "feed"};
+const char* kBlockTypes[] = {"line", "separator", "qr", "logo", "feed",
+                             "page_text", "page_image"};
 const char* kAligns[] = {"left", "center", "right"};
 
 int TypeIndex(BlockType t) {
@@ -14,6 +15,8 @@ int TypeIndex(BlockType t) {
         case BlockType::kQr: return 2;
         case BlockType::kLogo: return 3;
         case BlockType::kFeed: return 4;
+        case BlockType::kPageText: return 5;
+        case BlockType::kPageImage: return 6;
     }
     return 0;
 }
@@ -63,7 +66,8 @@ ReceiptBlock MakeLine(const std::string& text, Align a) {
 }  // namespace
 
 bool BlockTypeFromString(const std::string& s, BlockType* out) {
-    for (int i = 0; i < 5; ++i) {
+    const int n = (int)(sizeof(kBlockTypes) / sizeof(kBlockTypes[0]));
+    for (int i = 0; i < n; ++i) {
         if (s == kBlockTypes[i]) {
             if (out) *out = (BlockType)i;
             return true;
@@ -141,7 +145,12 @@ std::string ReceiptTemplateV3::ToJson() const {
             cJSON_AddNumberToObject(o, "ecc", b.qr_ecc);
         } else if (b.type == BlockType::kFeed) {
             cJSON_AddNumberToObject(o, "lines", b.feed_lines);
+        } else if (b.type == BlockType::kPageText) {
+            cJSON_AddStringToObject(o, "align", AlignToString(b.align));
+            cJSON_AddNumberToObject(o, "size", b.size);
+            cJSON_AddBoolToObject(o, "bold", b.bold);
         }
+        // page_image 只需 col/row/bg/align（上面已输出），无额外字段
         cJSON_AddItemToArray(arr, o);
     }
     char* s = cJSON_PrintUnformatted(root);
@@ -244,6 +253,26 @@ ReceiptTemplateV3 ReceiptTemplateV3::FromJson(const std::string& json, std::stri
         } else if (b.type == BlockType::kFeed) {
             cJSON* lines = cJSON_GetObjectItem(item, "lines");
             if (cJSON_IsNumber(lines)) b.feed_lines = lines->valueint;
+        } else if (b.type == BlockType::kPageText) {
+            cJSON* align = cJSON_GetObjectItem(item, "align");
+            if (cJSON_IsString(align) && align->valuestring) {
+                std::string bad_align = align->valuestring;
+                if (!AlignFromString(bad_align, &b.align)) {
+                    return fail(root, "page_text 的 align 非法: " + bad_align);
+                }
+            }
+            cJSON* size = cJSON_GetObjectItem(item, "size");
+            if (cJSON_IsNumber(size)) b.size = size->valueint;
+            cJSON* bold = cJSON_GetObjectItem(item, "bold");
+            if (cJSON_IsBool(bold)) b.bold = cJSON_IsTrue(bold);
+        } else if (b.type == BlockType::kPageImage) {
+            cJSON* align = cJSON_GetObjectItem(item, "align");
+            if (cJSON_IsString(align) && align->valuestring) {
+                std::string bad_align = align->valuestring;
+                if (!AlignFromString(bad_align, &b.align)) {
+                    return fail(root, "page_image 的 align 非法: " + bad_align);
+                }
+            }
         }
         t.blocks.push_back(b);
     }
@@ -298,7 +327,7 @@ std::string ReceiptTemplateV3::Validate() const {
             return at + "row 必须在 -1（自动）.." + std::to_string(kMaxRows) +
                    "（当前 " + std::to_string(b.row) + "）";
         }
-        if (b.bg && b.type != BlockType::kLogo) {
+        if (b.bg && b.type != BlockType::kLogo && b.type != BlockType::kPageImage) {
             // 二维码不做背景：文字压在码点上会遮挡模块、降低扫码识别率（现场确认的策略）
             return at + "只有 logo 可以作为背景水印（二维码做背景会遮挡码点、影响扫码）";
         }
@@ -338,6 +367,21 @@ std::string ReceiptTemplateV3::Validate() const {
                 break;
             }
             case BlockType::kLogo:
+                if (b.col < 0 || b.col >= paper_cols) {
+                    return at + "col 必须在 0.." + std::to_string(paper_cols - 1) + "（当前 " +
+                           std::to_string(b.col) + "）";
+                }
+                break;
+            case BlockType::kPageText:
+                if (b.col < 0 || b.col >= paper_cols) {
+                    return at + "col 必须在 0.." + std::to_string(paper_cols - 1) + "（当前 " +
+                           std::to_string(b.col) + "）";
+                }
+                if (b.size != 1 && b.size != 2) {
+                    return at + "size 必须是 1 或 2（当前 " + std::to_string(b.size) + "）";
+                }
+                break;
+            case BlockType::kPageImage:
                 if (b.col < 0 || b.col >= paper_cols) {
                     return at + "col 必须在 0.." + std::to_string(paper_cols - 1) + "（当前 " +
                            std::to_string(b.col) + "）";

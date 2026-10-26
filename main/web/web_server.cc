@@ -18,6 +18,8 @@
 #include "page_adjust.h"
 #include "page_mapping.h"
 #include "printer/logo_store.h"
+#include "printer/asset_store.h"
+#include "printer/page_content.h"
 #include "printer/printer_logo.h"
 #include "printer/receipt_defaults.h"
 #include "printer/receipt_layout.h"
@@ -37,7 +39,7 @@ static constexpr int kSyncTimeoutMs = 2000;
 // 所有页面 404 Nothing matches the given URI"，而 API 全部正常 —— 极易误判成 SPIFFS 坏了。
 // 本次因新增 3 条 /api/adjust 路由，把 31+2=33 顶破了原来是 32 的上限。
 // 对策：① 留足余量；② 编译期 static_assert（见 Start() 内），让超限在编译期就暴露。
-static constexpr size_t kMaxUriHandlers = 40;
+static constexpr size_t kMaxUriHandlers = 48;   // 2026-10-26 素材库/页面内容新增 6 条路由
 
 // MainSync：把任务投到主线程并同步取回 string 结果（D23"重读"路径）
 // 单层类型擦除，勿嵌套泛型 lambda（曾把此文件写到 79 万行）
@@ -640,6 +642,185 @@ esp_err_t WebServer::TimeSetHandler(httpd_req_t* req) {
     return SendJson(req, "{\"status\":\"ok\"}");
 }
 
+// ============================ 素材库 / 页面内容（2026-10-26）============================
+namespace {
+std::string QueryValue(httpd_req_t* req, const char* key) {
+    char q[160];
+    char v[96] = "";
+    if (httpd_req_get_url_query_str(req, q, sizeof(q)) != ESP_OK) return "";
+    if (httpd_query_key_value(q, key, v, sizeof(v)) != ESP_OK) return "";
+    // URL 解码（素材名常含中文：%E6%B5%8B...；2026-10-26 真机发现原名被原样存下）
+    std::string out;
+    auto hex = [](char c) -> int {
+        if (c >= '0' && c <= '9') return c - '0';
+        if (c >= 'a' && c <= 'f') return c - 'a' + 10;
+        if (c >= 'A' && c <= 'F') return c - 'A' + 10;
+        return -1;
+    };
+    for (size_t i = 0; v[i] != '\0'; ++i) {
+        if (v[i] == '%' && hex(v[i + 1]) >= 0 && hex(v[i + 2]) >= 0) {
+            out.push_back((char)((hex(v[i + 1]) << 4) | hex(v[i + 2])));
+            i += 2;
+        } else if (v[i] == '+') {
+            out.push_back(' ');
+        } else {
+            out.push_back(v[i]);
+        }
+    }
+    return out;
+}
+}  // namespace
+
+esp_err_t WebServer::AssetsGetHandler(httpd_req_t* req) {
+    auto out = MainSync([]() -> std::string {
+        cJSON* root = cJSON_CreateObject();
+        cJSON* arr = cJSON_AddArrayToObject(root, "slots");
+        int count = 0;
+        for (const auto& info : asset_store::List()) {
+            cJSON* o = cJSON_CreateObject();
+            cJSON_AddNumberToObject(o, "id", info.id);
+            cJSON_AddStringToObject(o, "name", info.name.c_str());
+            cJSON_AddNumberToObject(o, "width", info.width);
+            cJSON_AddNumberToObject(o, "height", info.height);
+            cJSON_AddNumberToObject(o, "bytes", (double)info.bytes);
+            cJSON_AddItemToArray(arr, o);
+            ++count;
+        }
+        cJSON_AddNumberToObject(root, "count", count);
+        cJSON_AddNumberToObject(root, "capacity", asset_store::kSlots);
+        return JsonDump(root);
+    });
+    if (out.empty()) return SendError(req, "主线程繁忙", 503);
+    return SendJson(req, out);
+}
+
+esp_err_t WebServer::AssetsPostHandler(httpd_req_t* req) {
+    std::string body = ReadBody(req);
+    LogoInfo info = PrinterLogo::Validate((const uint8_t*)body.data(), body.size());
+    if (!info.valid) return SendError(req, info.error ? info.error : "图片数据非法");
+    std::string name = QueryValue(req, "name");
+    if (name.empty()) name = "素材";
+    struct Ctx {
+        int id = -1;
+    };
+    auto ctx = std::make_shared<Ctx>();
+    MainSync([body, name, ctx]() -> std::string {
+        ctx->id = asset_store::FindFree();
+        if (ctx->id < 0) return "full";
+        if (!asset_store::Save(ctx->id, (const uint8_t*)body.data(), body.size(), name)) {
+            ctx->id = -2;
+        }
+        return "ok";
+    });
+    if (ctx->id == -1) return SendError(req, "素材库已满（48 张）", 507);
+    if (ctx->id == -2) return SendError(req, "素材写入失败", 500);
+    char msg[96];
+    snprintf(msg, sizeof(msg), "{\"id\":%d,\"width\":%d,\"height\":%d}", ctx->id,
+             info.width_dots, info.height_dots);
+    return SendJson(req, msg);
+}
+
+esp_err_t WebServer::AssetsDeleteHandler(httpd_req_t* req) {
+    int id = atoi(QueryValue(req, "id").c_str());
+    if (!asset_store::ValidId(id)) return SendError(req, "素材编号非法");
+    struct Ctx {
+        bool ok = false;
+    };
+    auto ctx = std::make_shared<Ctx>();
+    MainSync([id, ctx]() -> std::string {
+        ctx->ok = asset_store::Erase(id);
+        return ctx->ok ? "ok" : "fail";
+    });
+    if (!ctx->ok) return SendError(req, "删除失败", 500);
+    return SendJson(req, "{\"status\":\"deleted\"}");
+}
+
+esp_err_t WebServer::AssetsRawHandler(httpd_req_t* req) {
+    int id = atoi(QueryValue(req, "id").c_str());
+    if (!asset_store::ValidId(id)) return SendError(req, "素材编号非法");
+    static uint8_t* raw = nullptr;
+    if (raw == nullptr) {
+        raw = (uint8_t*)heap_caps_malloc(PrinterLogo::kMaxLogoBytes, MALLOC_CAP_SPIRAM);
+    }
+    if (raw == nullptr) return SendError(req, "内存不足", 500);
+    struct Ctx {
+        bool ok = false;
+        size_t len = 0;
+    };
+    auto ctx = std::make_shared<Ctx>();
+    MainSync([id, ctx]() -> std::string {
+        ctx->ok = asset_store::Load(id, raw, PrinterLogo::kMaxLogoBytes, &ctx->len);
+        return ctx->ok ? "ok" : "fail";
+    });
+    if (!ctx->ok) return SendJson(req, "{\"error\":\"no asset\"}", 404);
+    httpd_resp_set_type(req, "application/octet-stream");
+    httpd_resp_set_hdr(req, "Cache-Control", "no-store");
+    return httpd_resp_send(req, (const char*)raw, (ssize_t)ctx->len);
+}
+
+esp_err_t WebServer::PageContentGetHandler(httpd_req_t* req) {
+    auto out = MainSync([]() -> std::string {
+        std::vector<page_content::Item> items;
+        std::string err;
+        if (!page_content::FromJson(Settings::GetInstance().page_content(), &items, &err)) {
+            items.clear();   // 损坏时按空处理（页面还能改，不会卡死）
+        }
+        cJSON* root = cJSON_CreateObject();
+        cJSON_AddNumberToObject(root, "total_pages", Settings::GetInstance().total_pages());
+        cJSON* arr = cJSON_AddArrayToObject(root, "items");
+        for (const auto& it : items) {
+            cJSON* o = cJSON_CreateObject();
+            cJSON_AddNumberToObject(o, "page", it.page);
+            cJSON_AddStringToObject(o, "text", it.text.c_str());
+            cJSON_AddNumberToObject(o, "asset", it.asset);
+            cJSON_AddItemToArray(arr, o);
+        }
+        return JsonDump(root);
+    });
+    if (out.empty()) return SendError(req, "主线程繁忙", 503);
+    return SendJson(req, out);
+}
+
+esp_err_t WebServer::PageContentPutHandler(httpd_req_t* req) {
+    std::string body = ReadBody(req);
+    cJSON* root = cJSON_Parse(body.c_str());
+    if (root == nullptr) return SendError(req, "JSON 解析失败");
+    cJSON* pj = cJSON_GetObjectItem(root, "page");
+    cJSON* tj = cJSON_GetObjectItem(root, "text");
+    cJSON* aj = cJSON_GetObjectItem(root, "asset");
+    if (!cJSON_IsNumber(pj)) {
+        cJSON_Delete(root);
+        return SendError(req, "缺少 page");
+    }
+    int page = pj->valueint;
+    std::string text = (cJSON_IsString(tj) && tj->valuestring) ? tj->valuestring : "";
+    int asset = cJSON_IsNumber(aj) ? aj->valueint : -1;
+    cJSON_Delete(root);
+    if (page < 0 || page >= page_content::kMaxPages) return SendError(req, "页码越界");
+    if (text.size() > (size_t)page_content::kMaxTextBytes)
+        return SendError(req, "文字超过 128 字节");
+    if (asset >= asset_store::kSlots) return SendError(req, "素材编号越界");
+
+    struct Ctx {
+        bool ok = false;
+    };
+    auto ctx = std::make_shared<Ctx>();
+    MainSync([page, text, asset, ctx]() -> std::string {
+        std::vector<page_content::Item> items;
+        std::string err;
+        if (!page_content::FromJson(Settings::GetInstance().page_content(), &items, &err)) {
+            items.clear();
+        }
+        if (!page_content::Upsert(&items, page, text, asset)) return "bad";
+        Settings::GetInstance().set_page_content(page_content::ToJson(items));
+        Settings::GetInstance().SaveSync();
+        ctx->ok = true;
+        return "ok";
+    });
+    if (!ctx->ok) return SendError(req, "保存失败", 500);
+    return SendJson(req, "{\"status\":\"saved\"}");
+}
+
 // ============================ WiFi STA（设计 §8.1b）============================
 esp_err_t WebServer::WifiGetHandler(httpd_req_t* req) {
     // 状态由纯函数生成，**保证不含密码字段**（有单测锁定）；
@@ -1011,13 +1192,51 @@ esp_err_t WebServer::ReceiptTemplatePreviewHandler(httpd_req_t* req) {
         if (cJSON_IsBool(l)) lose = cJSON_IsTrue(l);
         cJSON_Delete(root_in);
     }
+    // 预览按"当前选中的页"渲染页面文字/图片（2026-10-26）；缺省第 0 页
+    int want_page = 0;
+    {
+        std::string pv = QueryValue(req, "page");
+        if (!pv.empty()) want_page = atoi(pv.c_str());
+    }
 
-    auto json = MainSync([t, lose]() -> std::string {
+    auto json = MainSync([t, lose, want_page]() -> std::string {
         ReceiptParams p = MakeSampleParams();
         p.is_lose = lose;
         if (lose) p.prize = p.lose_title;
+        p.page = want_page;
+        // 当页内容（与真机打印同一数据源：Settings.page_content + 素材库）
+        PageRenderInfo page_info;
+        {
+            std::vector<page_content::Item> items;
+            std::string perr;
+            if (page_content::FromJson(Settings::GetInstance().page_content(), &items, &perr)) {
+                const page_content::Item* it = page_content::Find(items, want_page);
+                if (it != nullptr) {
+                    page_info.text = it->text;
+                    if (it->asset >= 0) {
+                        static uint8_t* img = nullptr;
+                        if (img == nullptr) {
+                            img = (uint8_t*)heap_caps_malloc(PrinterLogo::kMaxLogoBytes,
+                                                             MALLOC_CAP_SPIRAM);
+                        }
+                        size_t got = 0;
+                        if (img != nullptr &&
+                            asset_store::Load(it->asset, img, PrinterLogo::kMaxLogoBytes, &got) &&
+                            got >= 8) {
+                            page_info.image = img;
+                            page_info.image_len = got;
+                            page_info.width_dots = (int)(img[4] | (img[5] << 8));
+                            page_info.height_dots = (int)(img[6] | (img[7] << 8));
+                            page_info.image_valid = page_info.width_dots > 0 &&
+                                                    (page_info.width_dots % 8) == 0 &&
+                                                    page_info.height_dots > 0;
+                        }
+                    }
+                }
+            }
+        }
         int unknown = 0;
-        std::string text = ReceiptRender::RenderPreviewText(t, p, &unknown);
+        std::string text = ReceiptRender::RenderPreviewText(t, p, &unknown, &page_info);
         cJSON* root = cJSON_CreateObject();
         cJSON_AddStringToObject(root, "text", text.c_str());
         cJSON_AddNumberToObject(root, "unknown_params", unknown);
@@ -1173,6 +1392,12 @@ bool WebServer::Start() {
         {"/api/logo", HTTP_GET, LogoGetHandler, nullptr},
         {"/api/logo/raw", HTTP_GET, LogoRawHandler, nullptr},
         {"/api/logo", HTTP_DELETE, LogoDeleteHandler, nullptr},
+        {"/api/assets", HTTP_GET, AssetsGetHandler, nullptr},
+        {"/api/assets", HTTP_POST, AssetsPostHandler, nullptr},
+        {"/api/assets", HTTP_DELETE, AssetsDeleteHandler, nullptr},
+        {"/api/assets/raw", HTTP_GET, AssetsRawHandler, nullptr},
+        {"/api/pages/content", HTTP_GET, PageContentGetHandler, nullptr},
+        {"/api/pages/content", HTTP_PUT, PageContentPutHandler, nullptr},
     };
     int registered = 0;
     for (const auto& h : handlers) {

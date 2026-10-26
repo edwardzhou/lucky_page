@@ -102,6 +102,7 @@ static const std::vector<StrField>& StrFields() {
         {"receipt_tmpl",      &Settings::receipt_tmpl_,      ""},   // flow 模板（沿用旧键）
         {"tmpl_canvas",       &Settings::tmpl_canvas_,       ""},   // canvas 模板
         {"tmpl_banner",       &Settings::tmpl_banner_,       ""},   // banner 模板
+        {"page_content",      &Settings::page_content_,      ""},   // 每页文字/图片（JSON）
         {"receipt_header",    &Settings::receipt_header_,
          "{shop}{nl}=================={nl}"},   // ⚠️ 勿用 ═（GBK 无此码位）
         {"receipt_footer",    &Settings::receipt_footer_,

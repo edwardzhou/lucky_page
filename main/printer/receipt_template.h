@@ -11,6 +11,8 @@ enum class BlockType {
     kQr,         ///< 二维码（text = 内容模板）
     kLogo,       ///< 插入已上传 Logo（未上传则跳过，D15）
     kFeed,       ///< 走纸 N 行
+    kPageText,   ///< 当页文字（内容来自「页面内容」；空则跳过）
+    kPageImage,  ///< 当页图片（仅 canvas 生效；flow/banner 跳过）
 };
 
 /// 水平对齐

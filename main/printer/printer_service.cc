@@ -7,6 +7,8 @@
 #include "freertos/task.h"
 
 #include "printer/printer_uart.h"
+#include "printer/asset_store.h"
+#include "printer/page_content.h"
 #include "printer/receipt_defaults.h"
 #include "printer/receipt_render.h"
 #include "printer/logo_store.h"
@@ -125,8 +127,45 @@ bool PrinterService::SendOne(const PrintJob& job) {
         }
     }
 
+    // 每页打印内容（2026-10-26）：按本次开奖页号取当页文字 + 图片素材
+    PageRenderInfo page_info;
+    {
+        std::vector<page_content::Item> items;
+        std::string perr;
+        if (page_content::FromJson(Settings::GetInstance().page_content(), &items, &perr)) {
+            const page_content::Item* it = page_content::Find(items, job.params.page);
+            if (it != nullptr) {
+                page_info.text = it->text;
+                if (it->asset >= 0) {
+                    static uint8_t* page_img = nullptr;
+                    if (page_img == nullptr) {
+                        page_img = (uint8_t*)heap_caps_malloc(
+                            PrinterLogo::kMaxLogoBytes, MALLOC_CAP_SPIRAM);
+                    }
+                    size_t got = 0;
+                    if (page_img != nullptr &&
+                        asset_store::Load(it->asset, page_img,
+                                          PrinterLogo::kMaxLogoBytes, &got) &&
+                        got >= 8) {
+                        page_info.image = page_img;
+                        page_info.image_len = got;
+                        page_info.width_dots = (int)(page_img[4] | (page_img[5] << 8));
+                        page_info.height_dots = (int)(page_img[6] | (page_img[7] << 8));
+                        page_info.image_valid = page_info.width_dots > 0 &&
+                                                (page_info.width_dots % 8) == 0 &&
+                                                page_info.height_dots > 0;
+                    } else {
+                        ESP_LOGW(TAG, "第 %d 页素材 %d 读取失败 → 本张不打页面图片",
+                                 job.params.page, it->asset);
+                    }
+                }
+            }
+        }
+    }
+
     std::string bytes = ReceiptRender::Render(job.tmpl, job.params,
-                                              logo_info.valid ? &logo_info : nullptr);
+                                              logo_info.valid ? &logo_info : nullptr,
+                                              &page_info);
     // 打印整帧字节数与 logo 是否参与 —— 排障关键（pdump 只留最后 1024B，看不到帧头的大图）
     ESP_LOGI(TAG, "整帧 %u 字节（logo %s）", (unsigned)bytes.size(),
              logo_info.valid ? "已包含" : "未包含");

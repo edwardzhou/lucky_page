@@ -124,6 +124,8 @@ public:
     void set_tmpl_canvas(const std::string& v) { tmpl_canvas_ = v; }
     const std::string& tmpl_banner() const { return tmpl_banner_; }
     void set_tmpl_banner(const std::string& v) { tmpl_banner_ = v; }
+    const std::string& page_content() const { return page_content_; }
+    void set_page_content(const std::string& v) { page_content_ = v; }
     int active_tmpl_mode() const { return active_tmpl_mode_; }
     void set_active_tmpl_mode(int v) { active_tmpl_mode_ = v; }
     /// 按模式取模板槽（0=flow 1=canvas 2=banner）——设计 §7.3d
@@ -224,7 +226,8 @@ private:
     std::string receipt_header_ = "{shop}{nl}=================={nl}";   // ⚠️ 勿用 ═/─（GBK 无此码位，会打成 ?）
     std::string receipt_tmpl_;        // flow（纯文字）模板 JSON（沿用旧键 receipt_tmpl）
     std::string tmpl_canvas_;         // canvas（画布）模板 JSON —— 设计 §7.3d 按模式分槽
-    std::string tmpl_banner_;         // banner（花边）模板 JSON
+    std::string tmpl_banner_;
+    std::string page_content_;   // 每页打印内容 JSON（page_content.cc 编解码）         // banner（花边）模板 JSON
     int active_tmpl_mode_ = 0;        // 当前生效模式 0=flow 1=canvas 2=banner
     std::string receipt_footer_ =
         "------------------------{nl}请凭此票到服务台领奖{nl}有效期至：{validity}{nl}";

@@ -16,7 +16,8 @@ TTL 热敏打印机出票；Web 页面配置奖池/小票版式/Logo/标定/WiFi
   组件管理器 `espressif/cjson`、UART/GPIO 组件依赖须显式 `esp_driver_uart`/`esp_driver_gpio`、
   手工导出环境须带 `ESP_IDF_VERSION` 变量）
 - **目标**：`esp32s3`；**板型**：Goouuu ESP32-S3-N16R8（16MB Flash + 8MB Octal PSRAM）
-- **分区**：`partitions/16m.csv`（nvs 0x9000 / ota_0 3MB / assets(SPIFFS) 3.44MB / replay / **logo 0xD00000**）
+- **分区**：`partitions/16m.csv`（nvs 0x9000 / ota_0 3MB / assets(SPIFFS) 3.44MB / replay /
+  **logo 0xD00000(128KB)** / **media 0xD20000(2.875MB，素材库 48 槽 × 48KiB)**）
 
 ## 强制规则
 
@@ -139,6 +140,7 @@ TTL 热敏打印机出票；Web 页面配置奖池/小票版式/Logo/标定/WiFi
 | **复位有持久化证据** | `network_reset.cc` 会写 `net_rst_cnt`/`net_rst_epoch`，WiFi 页显示"曾被恢复默认 N 次 + 最近时间"；配合**开机 30 s 守卫**与**按下/松开/长按日志**，以及串口 `rstbtn`/`rstmon [秒]` 引脚监视 —— 用于排查"没人按却被复位"这类无日志现象（曾有一次被我误判为神秘触发，实为**我自己的验证脚本**所清；现已有计数/时间/按键日志/引脚监视四重证据，5 分钟可定性）|
 | 凭据被清也能救回 | NVS 是**日志结构**：字段被覆盖前旧条目仍在。真机事故中就是用 `esptool read_flash 0x9000 0x4000` 读 NVS、提取明文 JSON 捞回两台已保存网络的 SSID 与明文密码（恢复时**低优先网络先 set**，保持原优先级顺序）。**凭据本身不写进仓库**：只记录方法与命令，真值留在设备 NVS，需要时按上述 `read_flash` 流程现场读取 |
 | **页面布局 = artnet 风格**（用户指定）| 页标题 + 卡片标题带下边框 + 状态行（标签左/加粗值右 + 「修改」小按钮）+ **通栏主操作按钮**（`.action-btn.primary/danger`）+ 居中空状态提示 + 内联编辑区（`.ip-edit-area`）；**保留本项目菜单与配色**，不采用 artnet 的 bottom tab 与配色 |
+| 页面内容 | 2026-10-26 起新增第 7 页 `pages.html`：每页文字 + 图片（从素材库选）；模板块 `page_text`/`page_image`；图片仅 canvas 生效；接口 `/api/assets`、`/api/pages/content` |
 | 宽度 | **6 页统一 `--w-page:760px`**；唯一例外是小票编辑页 `body.wide`（要与属性栏并排）。WiFi 页曾短暂用 480px 窄列（artnet 观感），用户要求"与其他页一致"后已取消 → **宽度例外必须显式枚举进断言**（`mobile_layout_check.py` 的 `WANT` 表 + `web_smoke.py` 真机复核），不能悄悄放宽 |
 | 风险操作验证纪律 | "真的断开一次""真的设静态 IP"这类会改变可达性的验证**走串口**，HTTP 只测校验负例与可逆项（改热点名只影响 AP 接口，安全）|
 
@@ -167,7 +169,7 @@ main/
                             `MainSync` 单层类型擦除投递主线程；`kMaxUriHandlers` 有 static_assert 护栏
   page_mapping.{h,cc}       页码→DMX 基础映射（理论基准）
   page_adjust.{h,cc}        每页 int8 行程**偏移**（实际值 = clamp(基础+偏移, 0, 255)）
-  assets/spiffs_contents/   6 个页面（index/prizes/receipt/logo/calibrate/wifi）
+  assets/spiffs_contents/   7 个页面（index/prizes/receipt/logo/calibrate/wifi/pages）
                             **UI v2「Lucky Studio」**（2026-10-26 起）：侧栏+顶栏+工作台
                             卡片布局，app.css 39KB 设计系统 + workspace/prizes/demo/
                             page-enhancements 四个脚本；demo.js 仅 ?demo=1 生效。

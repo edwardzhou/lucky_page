@@ -1330,3 +1330,64 @@ TEST(Presets, ResetAllWritesAllThreeSlots) {
     s.set_active_tmpl_mode(m0);
     EXPECT_TRUE(s.SaveSync());
 }
+
+// ============================================================================
+// 每页打印内容（page_text / page_image，2026-10-26）
+// ============================================================================
+TEST(ReceiptPageBlocks, TemplateJsonRoundTrip) {
+    const char* json =
+        "{\"version\":3,\"mode\":\"canvas\",\"paper_cols\":32,\"blocks\":["
+        "{\"type\":\"page_text\",\"align\":\"center\",\"size\":2}"
+        "]}";
+    std::string err;
+    auto t = ReceiptTemplateV3::FromJson(json, &err);
+    EXPECT_STREQ("", err.c_str());
+    ASSERT_EQ(1u, t.blocks.size());
+    EXPECT_TRUE(t.blocks[0].type == BlockType::kPageText);
+    EXPECT_EQ(2, t.blocks[0].size);
+    // 序列化回读
+    auto t2 = ReceiptTemplateV3::FromJson(t.ToJson(), &err);
+    EXPECT_STREQ("", err.c_str());
+    ASSERT_EQ(1u, t2.blocks.size());
+    EXPECT_TRUE(t2.blocks[0].type == BlockType::kPageText);
+}
+
+TEST(ReceiptPageBlocks, PageImageOnlyInCanvas) {
+    // flow 模式：page_image 不打印任何东西（不出现占位文字）
+    ReceiptBlock b;
+    b.type = BlockType::kPageImage;
+    PageRenderInfo page;
+    page.text = "";
+    uint8_t img[8 + 8 * 8] = {'L', 'G', 'O', '1', 64, 0, 8, 0};
+    page.image = img;
+    page.image_len = sizeof(img);
+    page.width_dots = 64;
+    page.height_dots = 8;
+    page.image_valid = true;
+    auto text = ReceiptRender::RenderPreviewText(OneBlock(b), SampleParams(), nullptr, &page);
+    EXPECT_TRUE(text.find("[页面图片]") == std::string::npos);
+}
+
+TEST(ReceiptPageBlocks, PageTextShowsPageContent) {
+    ReceiptBlock b;
+    b.type = BlockType::kPageText;
+    b.align = Align::kCenter;
+    PageRenderInfo page;
+    page.text = "P1 特等奖";
+    auto text = ReceiptRender::RenderPreviewText(OneBlock(b), SampleParams(), nullptr, &page);
+    EXPECT_TRUE(text.find("P1 特等奖") != std::string::npos);
+    // 未设置当页文字 → 空输出
+    PageRenderInfo empty;
+    auto text2 = ReceiptRender::RenderPreviewText(OneBlock(b), SampleParams(), nullptr, &empty);
+    EXPECT_TRUE(text2.find("P1") == std::string::npos);
+}
+
+TEST(ReceiptPageBlocks, PageTextRejectsBadAlign) {
+    const char* json =
+        "{\"version\":3,\"paper_cols\":32,\"blocks\":["
+        "{\"type\":\"page_text\",\"align\":\"diagonal\"}]}";
+    std::string err;
+    auto t = ReceiptTemplateV3::FromJson(json, &err);
+    EXPECT_TRUE(t.blocks.empty());
+    EXPECT_TRUE(!err.empty());
+}

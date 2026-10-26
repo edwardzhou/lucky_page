@@ -55,7 +55,8 @@ struct Canvas {
     int unknown_params = 0;
 };
 
-Canvas BuildCanvas(const ReceiptTemplateV3& t, const ReceiptParams& p) {
+Canvas BuildCanvas(const ReceiptTemplateV3& t, const ReceiptParams& p,
+                   const PageRenderInfo* page) {
     Canvas cv;
     int cursor = 0;   // 流式游标
     auto ensure = [&](int r) {
@@ -70,6 +71,22 @@ Canvas BuildCanvas(const ReceiptTemplateV3& t, const ReceiptParams& p) {
         int extra_rows_per_line = 1;
         int u = 0;
         switch (b.type) {
+            case BlockType::kPageText: {
+                const size_t box = (b.size == 2) ? (avail / 2) : avail;
+                std::string text = page != nullptr ? page->text : std::string();
+                if (text.empty()) continue;          // 当页没写字 → 整块跳过
+                for (auto& w : ReceiptLayout::WrapTo(SubstituteParams(text, p, &u),
+                                                     box == 0 ? 1 : box)) {
+                    lines.push_back(ReceiptLayout::Aligned(w, box == 0 ? 1 : box,
+                                                           AlignIndex(b.align)));
+                }
+                if (lines.empty()) lines.push_back("");
+                break;
+            }
+            case BlockType::kPageImage:
+                if (page == nullptr || !page->has_image()) continue;   // 无图 → 跳过
+                lines.push_back("[页面图片]");
+                break;
             case BlockType::kLine: {
                 const size_t box = (b.size == 2) ? (avail / 2) : avail;
                 std::string text = SubstituteParams(b.text, p, &u);
@@ -107,6 +124,9 @@ Canvas BuildCanvas(const ReceiptTemplateV3& t, const ReceiptParams& p) {
         cv.unknown_params += u;
         if (b.type == BlockType::kLine && b.size == 2) extra_rows_per_line = 2;
         int span = (int)lines.size() * extra_rows_per_line;
+        if (b.type == BlockType::kPageImage && page != nullptr && page->has_image()) {
+            span = std::max(1, ((int)page->height_dots + 23) / 24);
+        }
         if (b.type == BlockType::kQr) {
             // 二维码实际高度 ≈ 29 模块 × 模块尺寸（与渲染器 r += qr_rows 的预留一致）
             const int qr_sz = (b.qr_size >= 1 && b.qr_size <= 16) ? b.qr_size : 6;
@@ -195,7 +215,8 @@ void AppendTextRow(std::string* out, const std::vector<CanvasPiece>& pieces, int
     int cursor_col = 0;
     for (const auto& pc : sorted) {
         const ReceiptBlock& b = *pc.block;
-        if (b.bg || b.type == BlockType::kQr || b.type == BlockType::kLogo) continue;
+        if (b.bg || b.type == BlockType::kQr || b.type == BlockType::kLogo ||
+            b.type == BlockType::kPageImage) continue;
         if (pc.col > cursor_col) {
             out->append(ReceiptLayout::ToGbk(std::string((size_t)(pc.col - cursor_col), ' ')));
             cursor_col = pc.col;
@@ -215,8 +236,9 @@ void AppendTextRow(std::string* out, const std::vector<CanvasPiece>& pieces, int
 /// 而混合模式通常只有 3~6KB，落在已知可用区间，且叠加效果不受影响。
 /// ⚠ 必须显式设行距 ESC 3 24，使"1 行文字 = 24 点"与位图行高一致，否则错位。
 std::string RenderHybrid(const ReceiptTemplateV3& t, const ReceiptParams& p,
-                         const LogoRenderInfo* logo, std::string* missing) {
-    const Canvas cv = BuildCanvas(t, p);
+                         const LogoRenderInfo* logo, std::string* missing,
+                         const PageRenderInfo* page) {
+    const Canvas cv = BuildCanvas(t, p, page);
     const int rows = (int)cv.rows.size();
 
     // ① 计算图形区：[gfx_first, gfx_last]，由所有背景块覆盖的行决定
@@ -224,10 +246,13 @@ std::string RenderHybrid(const ReceiptTemplateV3& t, const ReceiptParams& p,
     int gfx_last = -1;
     for (int r = 0; r < rows; ++r) {
         for (const auto& pc : cv.rows[r]) {
-            if (!pc.block->bg) continue;
+            if (!pc.block->bg && pc.block->type != BlockType::kPageImage) continue;
             int span = 1;
             if (pc.block->type == BlockType::kLogo && logo != nullptr && logo->valid) {
                 span = std::max(1, ((int)logo->height_dots + 23) / 24);
+            }
+            if (pc.block->type == BlockType::kPageImage && page != nullptr && page->has_image()) {
+                span = std::max(1, ((int)page->height_dots + 23) / 24);
             }
             if (r < gfx_first) gfx_first = r;
             if (r + span - 1 > gfx_last) gfx_last = r + span - 1;
@@ -313,6 +338,18 @@ std::string RenderHybrid(const ReceiptTemplateV3& t, const ReceiptParams& p,
                 const ReceiptBlock& b = *pc.block;
                 const int x = pc.col * 12;
                 if (b.type == BlockType::kQr) continue;          // 二维码另用指令打印
+                if (b.type == BlockType::kPageImage) {
+                    if (page != nullptr && page->has_image()) {
+                        int x0 = x;
+                        const int maxw = t.paper_cols * 12 - x;
+                        if (b.align == Align::kCenter) {
+                            x0 = x + std::max(0, (maxw - page->width_dots) / 2);
+                        }
+                        band.DrawImage1bpp(x0, y, page->image + 8, page->width_dots,
+                                           page->height_dots, maxw);
+                    }
+                    continue;
+                }
                 if (b.type == BlockType::kLogo) {
                     if (b.bg && logo != nullptr && logo->valid && logo->data != nullptr &&
                         logo->len >= 8) {
@@ -370,7 +407,8 @@ std::string RasterRows(const uint8_t* data, int width_dots, int row0, int row_co
 /// 帧小（约 3~4KB）、打印快（约 1.5s），代价是画不出左右竖线——
 /// 需要四边完整边框或文字压图时请用画布模式。
 std::string RenderBanner(const ReceiptTemplateV3& t, const ReceiptParams& p,
-                         const LogoRenderInfo* logo, std::string* missing) {
+                         const LogoRenderInfo* logo, std::string* missing,
+                         const PageRenderInfo* page) {
     const int top_dots = std::max(0, t.banner_top_rows) * 24;
     const int bottom_dots = std::max(0, t.banner_bottom_rows) * 24;
     // 数据长度也要校验：按 width/height 声明的数据不足时切片会越界（防御）
@@ -399,7 +437,7 @@ std::string RenderBanner(const ReceiptTemplateV3& t, const ReceiptParams& p,
         out += RasterRows(logo->data + 8, img_w, 0, top_dots);
     }
 
-    const Canvas cv = BuildCanvas(t, p);
+    const Canvas cv = BuildCanvas(t, p, page);
     int feed_total = 0;
     for (const auto& b : t.blocks) {
         if (b.type == BlockType::kFeed) feed_total += std::max(0, b.feed_lines);
@@ -486,7 +524,7 @@ void PushPos(uint8_t* out, size_t* n, int dots, bool vertical) {
 }
 
 std::string RenderPageMode(const ReceiptTemplateV3& t, const ReceiptParams& p,
-                           const LogoRenderInfo* logo) {
+                           const LogoRenderInfo* logo, const PageRenderInfo* page) {
     std::string out;
     // 先算总行数（背景不占流式行，只影响页面高度）
     int total_rows = 0;
@@ -570,7 +608,7 @@ std::string RenderPageMode(const ReceiptTemplateV3& t, const ReceiptParams& p,
     }
 
     // ② 前景层：文字/分隔线，按行列坐标定位后输出
-    const Canvas cv = BuildCanvas(t, p);
+    const Canvas cv = BuildCanvas(t, p, page);
     for (size_t r = 0; r < cv.rows.size(); ++r) {
         for (const auto& pc : cv.rows[r]) {
             if (pc.block->bg) continue;
@@ -609,8 +647,9 @@ bool HasBackground(const ReceiptTemplateV3& t) {
 /// 这是本机唯一能实现"文字真正压在图上"的方式（页面模式实测不支持，评审 §19）。
 /// 版式与文字模式完全一致：字形尺寸对齐 FONT A（ASCII 12×24、汉字 24×24）。
 std::string RenderGraphics(const ReceiptTemplateV3& t, const ReceiptParams& p,
-                           const LogoRenderInfo* logo, std::string* missing) {
-    const Canvas cv = BuildCanvas(t, p);
+                           const LogoRenderInfo* logo, std::string* missing,
+                           const PageRenderInfo* page) {
+    const Canvas cv = BuildCanvas(t, p, page);
     const int rows = std::max<int>(1, (int)cv.rows.size());
     BmpCanvas canvas(t.paper_cols * 12, rows * 24);
     bool any_qr = false;
@@ -620,6 +659,19 @@ std::string RenderGraphics(const ReceiptTemplateV3& t, const ReceiptParams& p,
             const int x = pc.col * 12;
             const int y = (int)r * 24;
             if (b.type == BlockType::kQr) { any_qr = true; continue; }   // 二维码走打印机指令
+            if (b.type == BlockType::kPageImage) {
+                if (page != nullptr && page->has_image()) {
+                    int x0 = x;
+                    int maxw = t.paper_cols * 12 - x;
+                    if (b.align == Align::kCenter) {
+                        const int w = std::min<int>(page->width_dots, maxw);
+                        x0 = x + std::max(0, (maxw - w) / 2);
+                    }
+                    canvas.DrawImage1bpp(x0, y, page->image + 8, page->width_dots,
+                                         page->height_dots, maxw);
+                }
+                continue;
+            }
             if (b.type == BlockType::kLogo) {
                 if (logo != nullptr && logo->valid && logo->data != nullptr && logo->len >= 8) {
                     int x0 = x;
@@ -682,13 +734,13 @@ std::string RenderGraphics(const ReceiptTemplateV3& t, const ReceiptParams& p,
 }
 
 std::string ReceiptRender::Render(const ReceiptTemplateV3& t, const ReceiptParams& p,
-                                  const LogoRenderInfo* logo) {
+                                  const LogoRenderInfo* logo, const PageRenderInfo* page) {
     // 有背景层元素时走页面模式（真叠加）；打印机不支持时可用设置退回标准模式
     // ---- 按模版模式分派（设计 §7.3c）----
     const TemplateMode emode = t.EffectiveMode();
     if (emode == TemplateMode::kBanner) {
         std::string missing;
-        std::string banner = RenderBanner(t, p, logo, &missing);
+        std::string banner = RenderBanner(t, p, logo, &missing, page);
         ESP_LOGI("ReceiptRender", "花边模式合成完成（%u 字节：上 %d 行 / 下 %d 行花边）",
                  (unsigned)banner.size(), t.banner_top_rows, t.banner_bottom_rows);
         return banner;
@@ -704,11 +756,11 @@ std::string ReceiptRender::Render(const ReceiptTemplateV3& t, const ReceiptParam
         //   ② 图形模式（我们自己把整票合成成位图 —— 本机走这条）
         //   ③ 都不可用 → 退回文字模式（图与字上下分层，绝不乱码）
         if (Settings::GetInstance().printer_pagemode()) {
-            return RenderPageMode(t, p, logo);
+            return RenderPageMode(t, p, logo, page);
         }
         if (BmpCanvas::FontAvailable()) {
             std::string missing;
-            std::string gfx = RenderHybrid(t, p, logo, &missing);
+            std::string gfx = RenderHybrid(t, p, logo, &missing, page);
             if (!gfx.empty() && missing.empty()) {
                 ESP_LOGI("ReceiptRender", "混合模式合成完成（%u 字节，仅重叠行走位图）",
                          (unsigned)gfx.size());
@@ -726,7 +778,7 @@ std::string ReceiptRender::Render(const ReceiptTemplateV3& t, const ReceiptParam
     Push(&out, kReset, sizeof(kReset));
     Push(&out, kCodePage, sizeof(kCodePage));
 
-    const Canvas cv = BuildCanvas(t, p);
+    const Canvas cv = BuildCanvas(t, p, page);
     for (size_t row_idx = 0; row_idx < cv.rows.size(); ++row_idx) {
         const auto& pieces = cv.rows[row_idx];
         if (pieces.empty()) {
@@ -768,6 +820,8 @@ std::string ReceiptRender::Render(const ReceiptTemplateV3& t, const ReceiptParam
                 // 二维码实际高约 ceil(29×模块尺寸/24) 行 —— 必须**跳过**这些预留行，
                 // 否则它们会被当作空行打出来（真机问题：二维码之后空白太多）
                 row_idx += (size_t)(std::max(1, (29 * (int)b.qr_size + 23) / 24) - 1);
+            } else if (b.type == BlockType::kPageImage) {
+                cursor_col = t.paper_cols;   // 图片在文字模式不打印（仅 canvas 支持），不占文字位
             } else if (b.type == BlockType::kLogo) {
                 if (logo != nullptr && logo->valid && logo->data != nullptr && logo->len >= 8) {
                     LogoInfo info;
@@ -806,8 +860,8 @@ std::string ReceiptRender::RenderPreviewText(const ReceiptTemplateV3& t, const R
 }
 
 std::string ReceiptRender::RenderPreviewText(const ReceiptTemplateV3& t, const ReceiptParams& p,
-                                             int* unknown_params) {
-    const Canvas cv = BuildCanvas(t, p);
+                                             int* unknown_params, const PageRenderInfo* page) {
+    const Canvas cv = BuildCanvas(t, p, page);
     std::string out;
     bool first = true;
     for (size_t r = 0; r < cv.rows.size(); ++r) {
@@ -824,7 +878,16 @@ std::string ReceiptRender::RenderPreviewText(const ReceiptTemplateV3& t, const R
         }
         if (!first) out.push_back('\n');
         first = false;
-        out.append(ComposeRow(cv.rows[r], t.paper_cols));
+        // 页面图片：仅在 canvas 模式会真的打印；其余模式预览也跳过占位，
+        // 保持"预览 = 纸面"（flow/banner 没有位图能力）
+        std::vector<CanvasPiece> shown;
+        const bool canvas_mode = t.EffectiveMode() == TemplateMode::kCanvas;
+        for (const auto& pc : cv.rows[r]) {
+            if (pc.block != nullptr && pc.block->type == BlockType::kPageImage && !canvas_mode)
+                continue;
+            shown.push_back(pc);
+        }
+        out.append(ComposeRow(shown, t.paper_cols));
         r += (size_t)qr_skip;
     }
     if (unknown_params) *unknown_params = cv.unknown_params;
