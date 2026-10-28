@@ -9,6 +9,12 @@
 
 #include "printer/asset_store.h"
 
+#include <cstdio>
+#include <sys/stat.h>
+
+#include "storage/sd_card.h"
+#include "storage/sd_paths.h"
+
 #define TAG "SoundStore"
 
 namespace sound_store {
@@ -46,6 +52,14 @@ uint32_t Crc32(const uint8_t* data, size_t len) {
         for (int b = 0; b < 8; ++b) crc = (crc >> 1) ^ (0xEDB88320u & (0u - (crc & 1u)));
     }
     return ~crc;
+}
+
+bool SdReady() { return sd_card::IsMounted(); }
+
+void EnsureSoundDir() {
+    mkdir(sd_paths::kRoot, 0777);
+    mkdir("/sdcard/lucky", 0777);
+    mkdir(sd_paths::kSoundDir, 0777);
 }
 
 }  // namespace
@@ -102,6 +116,14 @@ bool ParseHeader(const uint8_t* hdr, size_t hdr_len, int expect_role, Info* info
     return true;
 }
 
+namespace {
+bool ClearFlashRole(int role) {
+    const esp_partition_t* p = Part();
+    if (p == nullptr) return false;
+    return esp_partition_erase_range(p, SlotOffset(role), kSlotBytes) == ESP_OK;
+}
+}  // namespace
+
 bool Save(int role, const int16_t* pcm, size_t samples) {
     if (!ValidRole(role) || pcm == nullptr || samples == 0) return false;
     const size_t len = samples * 2;
@@ -109,6 +131,26 @@ bool Save(int role, const int16_t* pcm, size_t samples) {
         ESP_LOGW(TAG, "音效过长：%u 字节 > %u", (unsigned)len,
                  (unsigned)(kSlotBytes - kHeaderBytes));
         return false;
+    }
+    if (SdReady()) {
+        EnsureSoundDir();
+        std::string path = sd_paths::SoundFile(RoleName(role));
+        std::string tmp = path + ".tmp";
+        FILE* f = fopen(tmp.c_str(), "wb");
+        if (f != nullptr) {
+            bool ok = fwrite(pcm, 1, len, f) == len;
+            fclose(f);
+            if (ok) {
+                remove(path.c_str());       // FAT rename 不覆盖已存在目标
+                ok = rename(tmp.c_str(), path.c_str()) == 0;
+            }
+            if (ok) {
+                ClearFlashRole(role);   // 只清 flash 旧副本（不能删刚写的 SD 文件）
+                return true;
+            }
+            remove(tmp.c_str());
+            ESP_LOGW(TAG, "SD 写入音效失败 → 回落 flash");
+        }
     }
     const esp_partition_t* p = Part();
     if (p == nullptr) return false;
@@ -137,6 +179,18 @@ bool Save(int role, const int16_t* pcm, size_t samples) {
 
 bool Load(int role, uint8_t* out, size_t out_cap, size_t* out_len) {
     if (!ValidRole(role) || out == nullptr) return false;
+    if (SdReady()) {
+        std::string path = sd_paths::SoundFile(RoleName(role));
+        FILE* f = fopen(path.c_str(), "rb");
+        if (f != nullptr) {
+            size_t n = fread(out, 1, out_cap, f);
+            fclose(f);
+            if (n > 0 && (n & 1) == 0) {
+                if (out_len != nullptr) *out_len = n;
+                return true;
+            }
+        }
+    }
     const esp_partition_t* p = Part();
     if (p == nullptr) return false;
     const size_t off = SlotOffset(role);
@@ -155,6 +209,7 @@ bool Load(int role, uint8_t* out, size_t out_cap, size_t* out_len) {
 
 bool Erase(int role) {
     if (!ValidRole(role)) return false;
+    if (SdReady()) remove(sd_paths::SoundFile(RoleName(role)).c_str());
     const esp_partition_t* p = Part();
     if (p == nullptr) return false;
     return esp_partition_erase_range(p, SlotOffset(role), kSlotBytes) == ESP_OK;
@@ -163,6 +218,17 @@ bool Erase(int role) {
 Info ReadInfo(int role) {
     Info info;
     if (!ValidRole(role)) return info;
+    if (SdReady()) {
+        struct stat st;
+        std::string path = sd_paths::SoundFile(RoleName(role));
+        if (!path.empty() && stat(path.c_str(), &st) == 0 && S_ISREG(st.st_mode) &&
+            st.st_size > 0 && st.st_size <= (off_t)kSlotBytes) {
+            info.custom = true;
+            info.bytes = (uint32_t)st.st_size;
+            info.duration_ms = (uint32_t)((uint64_t)st.st_size / 2 * 1000 / kRate);
+            return info;
+        }
+    }
     const esp_partition_t* p = Part();
     if (p == nullptr) return info;
     uint8_t hdr[kHeaderBytes];

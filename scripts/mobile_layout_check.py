@@ -6,7 +6,7 @@
 并把**有意的例外显式枚举**（范围滑块/复选框/页脚内联链接不参与触控断言）。
 
 覆盖：
-  1. 7 页移动视口（390×844）：无横向溢出、零 JS 异常、侧栏收起、汉堡可点、底部导航显示
+  1. 9 页移动视口（390×844）：无横向溢出、零 JS 异常、侧栏收起、汉堡可点、底部导航显示
   2. 触控目标 ≥36px（枚举例外）
   3. 输入框字号 ≥16px（除 range/checkbox）
   4. 桌面视口（1440×900）：无横向溢出、侧栏展开 224px、跨页组件样式一致
@@ -25,7 +25,7 @@ from playwright.async_api import async_playwright
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent / "main" / "assets" / "spiffs_contents"
 PORT = 8898
-PAGES = ["index", "prizes", "receipt", "pages", "logo", "calibrate", "wifi", "sound"]
+PAGES = ["index", "prizes", "receipt", "pages", "logo", "calibrate", "wifi", "sound", "sdcard"]
 SHOTS = pathlib.Path("/tmp/lucky-mobile-v2")
 
 passed, failed = [], []

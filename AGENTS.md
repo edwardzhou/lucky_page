@@ -142,6 +142,7 @@ TTL 热敏打印机出票；Web 页面配置奖池/小票版式/Logo/标定/WiFi
 | **页面布局 = artnet 风格**（用户指定）| 页标题 + 卡片标题带下边框 + 状态行（标签左/加粗值右 + 「修改」小按钮）+ **通栏主操作按钮**（`.action-btn.primary/danger`）+ 居中空状态提示 + 内联编辑区（`.ip-edit-area`）；**保留本项目菜单与配色**，不采用 artnet 的 bottom tab 与配色 |
 | 页面内容 | 2026-10-26 起新增第 7 页 `pages.html`：每页文字 + 图片（从素材库选）；模板块 `page_text`/`page_image`；图片仅 canvas 生效；接口 `/api/assets`、`/api/pages/content` |
 | 音效 | 第 8 页 `sound.html`：欢迎/中奖/落空可上传自定义（浏览器转 24k mono WAV，≤4s），存 media 分区尾部 3×192KiB；接口 `/api/sounds`；未上传回落默认 |
+| SD 卡 | 第 9 页 `sdcard.html`：文件管理（列表/上传/下载/删除/重命名/新建目录/挂载卸载）；**有卡时素材优先存 SD**（`/sdcard/lucky/{assets,sounds}`），无卡回落 flash 槽；接口 `/api/sdcard/*` |
 | 宽度 | **6 页统一 `--w-page:760px`**；唯一例外是小票编辑页 `body.wide`（要与属性栏并排）。WiFi 页曾短暂用 480px 窄列（artnet 观感），用户要求"与其他页一致"后已取消 → **宽度例外必须显式枚举进断言**（`mobile_layout_check.py` 的 `WANT` 表 + `web_smoke.py` 真机复核），不能悄悄放宽 |
 | 风险操作验证纪律 | "真的断开一次""真的设静态 IP"这类会改变可达性的验证**走串口**，HTTP 只测校验负例与可逆项（改热点名只影响 AP 接口，安全）|
 
@@ -168,9 +169,12 @@ main/
   web/web_server.{h,cc}     38 个接口（含标定 `/api/adjust` 与 WiFi 进阶 `/api/wifi/ap|ip|
                             disconnect|reconnect|scan`）；
                             `MainSync` 单层类型擦除投递主线程；`kMaxUriHandlers` 有 static_assert 护栏
+  storage/sd_card.{h,cc}    SD 卡服务（SPI：MISO=G13/SCK=G14/MOSI=G21/CS=G47；
+                            延迟挂载/3 次重试/失败降级；IDF esp_vfs_fat + FATFS）
+  storage/sd_paths.{h,cc}   SD 路径/素材文件名纯函数（防穿越，可单测）
   page_mapping.{h,cc}       页码→DMX 基础映射（理论基准）
   page_adjust.{h,cc}        每页 int8 行程**偏移**（实际值 = clamp(基础+偏移, 0, 255)）
-  assets/spiffs_contents/   8 个页面（index/prizes/receipt/logo/calibrate/wifi/pages/sound）
+  assets/spiffs_contents/   9 个页面（index/prizes/receipt/logo/calibrate/wifi/pages/sound/sdcard）
                             **UI v2「Lucky Studio」**（2026-10-26 起）：侧栏+顶栏+工作台
                             卡片布局，app.css 39KB 设计系统 + workspace/prizes/demo/
                             page-enhancements 四个脚本；demo.js 仅 ?demo=1 生效。

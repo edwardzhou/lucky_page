@@ -43,6 +43,8 @@ set(MAIN_SOURCES
     "${MAIN_DIR}/printer/asset_store.cc"
     "${MAIN_DIR}/speaker/sound_decode.cc"
     "${MAIN_DIR}/speaker/sound_store.cc"
+    "${MAIN_DIR}/storage/sd_paths.cc"
+    "${MAIN_DIR}/storage/sd_card.cc"
     "${MAIN_DIR}/reset_gesture.cc"
     "${MAIN_DIR}/settings.cc"
     "${MAIN_DIR}/page_mapping.cc"
@@ -62,5 +64,6 @@ idf_component_register(
     INCLUDE_DIRS "." "${CMAKE_CURRENT_SOURCE_DIR}/../../main" "${DWPRINTER_DIR}/include"
     # ESP-IDF v6：json 组件移除（cJSON 由组件管理器的 espressif/cjson 提供，见 idf_component.yml）
     PRIV_REQUIRES unity esp_driver_uart esp_driver_gpio esp_timer nvs_flash spiffs esp_netif lwip
+                  sdmmc fatfs esp_driver_spi
     WHOLE_ARCHIVE
 )

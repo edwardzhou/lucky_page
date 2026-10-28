@@ -9,6 +9,12 @@
 
 #include "printer/printer_logo.h"
 
+#include <cstdio>
+#include <sys/stat.h>
+
+#include "storage/sd_card.h"
+#include "storage/sd_paths.h"
+
 #define TAG "AssetStore"
 
 namespace asset_store {
@@ -67,6 +73,73 @@ uint8_t* Scratch() {
     return p;
 }
 
+// ---- SD 卡存储（优先；2026-10-28）----
+bool SdReady() { return sd_card::IsMounted(); }
+
+void EnsureDirs() {
+    mkdir(sd_paths::kRoot, 0777);
+    mkdir("/sdcard/lucky", 0777);
+    mkdir(sd_paths::kAssetDir, 0777);
+    mkdir(sd_paths::kSoundDir, 0777);
+}
+
+bool SdAssetExists(int id) {
+    std::string path = sd_paths::AssetFile(id);
+    struct stat st;
+    return !path.empty() && stat(path.c_str(), &st) == 0 && S_ISREG(st.st_mode);
+}
+
+// 名称侧车文件（FAT 无扩展属性）：<id>.name，纯文本 ≤24 字节
+std::string SdNamePath(int id) { return sd_paths::AssetFile(id) + ".name"; }
+
+void SdWriteName(int id, const std::string& name) {
+    FILE* f = fopen(SdNamePath(id).c_str(), "wb");
+    if (f == nullptr) return;
+    fwrite(name.data(), 1, name.size() > (size_t)kMaxNameBytes ? (size_t)kMaxNameBytes : name.size(), f);
+    fclose(f);
+}
+
+std::string SdReadName(int id) {
+    FILE* f = fopen(SdNamePath(id).c_str(), "rb");
+    if (f == nullptr) return "";
+    char buf[kMaxNameBytes + 1] = {};
+    size_t n = fread(buf, 1, kMaxNameBytes, f);
+    fclose(f);
+    return std::string(buf, n);
+}
+
+/// SD 上保存（写临时文件再改名，避免半写；FAT rename 需先删目标）
+bool SdSave(int id, const uint8_t* lgo1, size_t len, const std::string& name) {
+    EnsureDirs();
+    std::string path = sd_paths::AssetFile(id);
+    if (path.empty()) return false;
+    std::string tmp = path + ".tmp";
+    FILE* f = fopen(tmp.c_str(), "wb");
+    if (f == nullptr) return false;
+    bool ok = fwrite(lgo1, 1, len, f) == len;
+    fclose(f);
+    if (!ok) {
+        remove(tmp.c_str());
+        return false;
+    }
+    remove(path.c_str());
+    if (rename(tmp.c_str(), path.c_str()) != 0) {
+        remove(tmp.c_str());
+        return false;
+    }
+    SdWriteName(id, name);
+    return true;
+}
+
+namespace {
+// 只清 flash 槽（SD 写入成功后清旧副本用；不能动 SD 上的新文件）
+bool ClearFlashSlot(int id) {
+    const esp_partition_t* p = Part();
+    if (p == nullptr) return false;
+    return esp_partition_erase_range(p, SlotOffset(id), SlotBytes()) == ESP_OK;
+}
+}  // namespace
+
 }  // namespace
 
 bool ValidId(int id) { return id >= 0 && id < kSlots; }
@@ -124,6 +197,14 @@ bool ParseSlotHeader(const uint8_t* hdr, size_t hdr_len, int expect_id, Info* in
 bool Save(int id, const uint8_t* lgo1, size_t len, const std::string& name) {
     if (!ValidId(id)) return false;
     if (lgo1 == nullptr || len < 8 || len > PrinterLogo::kMaxLogoBytes) return false;
+    if (SdReady()) {
+        if (!SdSave(id, lgo1, len, name)) {
+            ESP_LOGW(TAG, "SD 写入失败（id=%d）→ 回落 flash 槽", id);
+        } else {
+            ClearFlashSlot(id);        // 只清 flash 旧副本（避免无卡时旧图复活）
+            return true;
+        }
+    }
     const esp_partition_t* p = Part();
     if (p == nullptr) return false;
     if (SlotOffset(id) + SlotBytes() > p->size) {
@@ -161,6 +242,19 @@ bool Save(int id, const uint8_t* lgo1, size_t len, const std::string& name) {
 
 bool Load(int id, uint8_t* out, size_t out_cap, size_t* out_len) {
     if (!ValidId(id) || out == nullptr) return false;
+    if (SdReady() && SdAssetExists(id)) {
+        std::string path = sd_paths::AssetFile(id);
+        FILE* f = fopen(path.c_str(), "rb");
+        if (f != nullptr) {
+            size_t n = fread(out, 1, out_cap, f);
+            fclose(f);
+            if (n >= 8 && PrinterLogo::Validate(out, n).valid) {
+                if (out_len != nullptr) *out_len = n;
+                return true;
+            }
+            ESP_LOGW(TAG, "SD 素材 %d 校验失败 → 尝试 flash 副本", id);
+        }
+    }
     const esp_partition_t* p = Part();
     if (p == nullptr) return false;
     size_t off = SlotOffset(id);
@@ -180,14 +274,36 @@ bool Load(int id, uint8_t* out, size_t out_cap, size_t* out_len) {
 
 bool Erase(int id) {
     if (!ValidId(id)) return false;
-    const esp_partition_t* p = Part();
-    if (p == nullptr) return false;
-    return esp_partition_erase_range(p, SlotOffset(id), SlotBytes()) == ESP_OK;
+    if (SdReady()) {
+        remove(sd_paths::AssetFile(id).c_str());
+        remove(SdNamePath(id).c_str());
+    }
+    return ClearFlashSlot(id);
 }
 
 Info ReadInfo(int id) {
     Info info;
     if (!ValidId(id)) return info;
+    if (SdReady() && SdAssetExists(id)) {
+        std::string path = sd_paths::AssetFile(id);
+        FILE* f = fopen(path.c_str(), "rb");
+        if (f != nullptr) {
+            uint8_t hdr[8];
+            size_t n = fread(hdr, 1, sizeof(hdr), f);
+            fseek(f, 0, SEEK_END);
+            long len = ftell(f);
+            fclose(f);
+            if (n == 8 && memcmp(hdr, "LGO1", 4) == 0 && len > 8) {
+                info.id = id;
+                info.used = true;
+                info.name = SdReadName(id);
+                info.width = (int)(hdr[4] | (hdr[5] << 8));
+                info.height = (int)(hdr[6] | (hdr[7] << 8));
+                info.bytes = (size_t)len;
+                return info;
+            }
+        }
+    }
     const esp_partition_t* p = Part();
     if (p == nullptr) return info;
     uint8_t hdr[kHeaderBytes];

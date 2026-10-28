@@ -119,4 +119,30 @@ static_assert(SPEAKER_I2S_BCLK_PIN != SPEAKER_I2S_LRCK_PIN &&
 static_assert(SPEAKER_SAMPLE_RATE == 24000, "采样率须与 welcome.wav 素材一致（24kHz，对齐小智）");
 
 
+// ===== SD 卡（SPI 模式，2026-10-28 从 dms-pager 移植）=====
+// 用户指定接线：模块 MISO→G13、SCK→G14、MOSI→G21、CS→G47
+// 选 SPI 而不用 SDMMC：S3 空闲脚不成组，SPI 可任意映射且外接模块最常见。
+#define SD_SPI_HOST          SPI2_HOST
+#define SD_PIN_MISO          GPIO_NUM_13
+#define SD_PIN_SCK           GPIO_NUM_14
+#define SD_PIN_MOSI          GPIO_NUM_21
+#define SD_PIN_CS            GPIO_NUM_47
+#define SD_MOUNT_POINT       "/sdcard"
+#define SD_FREQ_KHZ          20000
+
+#define SD_PINS_OK(p) \
+    ((p) != PRINTER_TX_PIN && (p) != PRINTER_RX_PIN && (p) != PRINTER_FLOW_PIN && \
+     (p) != DMX512_TX_PIN && (p) != DMX512_RX_PIN && (p) != DMX512_DE_PIN && \
+     (p) != BUTTON_MODULE_GPIO && (p) != RESET_BUTTON_GPIO && (p) != IR_RECEIVER_GPIO && \
+     (p) != SPEAKER_I2S_BCLK_PIN && (p) != SPEAKER_I2S_LRCK_PIN && (p) != SPEAKER_I2S_DOUT_PIN && \
+     (p) != GPIO_NUM_19 && (p) != GPIO_NUM_20 && (p) != GPIO_NUM_43 && (p) != GPIO_NUM_44)
+static_assert(SD_PINS_OK(SD_PIN_MISO), "SD MISO 与现有外设/禁用脚冲突");
+static_assert(SD_PINS_OK(SD_PIN_SCK), "SD SCK 与现有外设/禁用脚冲突");
+static_assert(SD_PINS_OK(SD_PIN_MOSI), "SD MOSI 与现有外设/禁用脚冲突");
+static_assert(SD_PINS_OK(SD_PIN_CS), "SD CS 与现有外设/禁用脚冲突");
+static_assert(SD_PIN_MISO != SD_PIN_SCK && SD_PIN_MISO != SD_PIN_MOSI &&
+              SD_PIN_MISO != SD_PIN_CS && SD_PIN_SCK != SD_PIN_MOSI &&
+              SD_PIN_SCK != SD_PIN_CS && SD_PIN_MOSI != SD_PIN_CS,
+              "SD 四个脚不能互相同脚");
+
 #endif  // _ESP32S3_LUCKY_CONFIG_H_

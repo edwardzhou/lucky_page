@@ -1,0 +1,127 @@
+<!DOCTYPE html><html lang="zh-CN"><head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+
+<style>
+/* SD 卡：状态卡（挂载 / 容量）+ 文件区（面包屑 / 上传 / 表格）；通用组件全部走 app.css */
+.lp-page-sdcard .sd-note{margin:14px 0 0;font-size:11px;line-height:1.9;color:var(--tx-mute)}
+.lp-page-sdcard .sd-note.err{color:var(--danger)}
+.lp-page-sdcard .sd-status .v{justify-content:flex-end;text-align:right;overflow-wrap:anywhere}
+.lp-page-sdcard .sd-bar{display:block;height:8px;margin:16px 0 0;background:#e9efeb;border-radius:5px;overflow:hidden}
+.lp-page-sdcard .sd-bar i{display:block;height:100%;width:0;background:#5c9a78;border-radius:5px;transition:width .2s}
+.lp-page-sdcard .sd-actions{display:flex;flex-wrap:wrap;gap:9px;margin-top:18px}
+.lp-page-sdcard .sd-actions>button{flex:1 1 96px}
+.lp-page-sdcard .sd-crumb{display:flex;flex-wrap:wrap;align-items:center;gap:4px 2px;min-width:0;margin:0 0 14px;font-size:11px;color:var(--tx-mute)}
+.lp-page-sdcard .sd-crumb-btn{min-height:32px;padding:5px 9px;font-size:11px;background:#f2f6f3;
+  white-space:normal;overflow-wrap:anywhere;text-align:left}
+.lp-page-sdcard .sd-crumb .sd-sep{color:#aab7ad;padding:0 1px}
+.lp-page-sdcard .sd-crumb-current{padding:5px 2px;font-weight:600;color:var(--tx);overflow-wrap:anywhere}
+.lp-page-sdcard .sd-upload input[type=file]{display:block;width:100%;padding:8px}
+.lp-page-sdcard .sd-upload input[type=file]::file-selector-button{margin-right:10px;padding:8px 14px;
+  border:1px solid var(--border-strong);border-radius:8px;background:var(--surface-2);
+  color:var(--tx);font:inherit;font-size:13px;cursor:pointer}
+.lp-page-sdcard .table-scroll{overflow-x:auto;max-width:100%}
+.lp-page-sdcard #sdTable{table-layout:fixed}
+.lp-page-sdcard #sdTable th:nth-child(2){width:72px}
+.lp-page-sdcard #sdTable th:nth-child(3){width:104px}
+.lp-page-sdcard #sdTable th:nth-child(4){width:186px}
+.lp-page-sdcard #sdTable td{vertical-align:middle}
+/* 名称列是行主入口：目录可点进入，长文件名按字符折行，绝不撑破表格 */
+.lp-page-sdcard .sd-name{display:flex;align-items:flex-start;justify-content:flex-start;gap:7px;
+  width:100%;min-width:0;min-height:34px;padding:4px 2px;border:0;background:none;
+  color:var(--tx);font-size:12px;text-align:left;white-space:normal;overflow-wrap:anywhere}
+.lp-page-sdcard .sd-name:hover{background:none;color:var(--forest)}
+.lp-page-sdcard .sd-name .lp-icon{margin-top:2px;color:#8aa294}
+.lp-page-sdcard .sd-name.sd-dir .lp-icon{color:#c08b4e}
+.lp-page-sdcard .sd-type{font-size:10px;color:var(--tx-mute);white-space:nowrap}
+.lp-page-sdcard .sd-size{font-size:11px;color:var(--tx-mute);font-variant-numeric:tabular-nums;white-space:nowrap}
+.lp-page-sdcard .sd-acts{display:flex;flex-wrap:wrap;gap:6px;justify-content:flex-end}
+.lp-page-sdcard .sd-acts>a{display:inline-flex;align-items:center;justify-content:center;
+  border:1px solid var(--border-strong);border-radius:var(--r-ctl);color:var(--tx);text-decoration:none}
+.lp-page-sdcard .sd-foot{margin-top:14px;font-size:10px;color:var(--tx-mute);font-variant-numeric:tabular-nums}
+@media(max-width:960px){
+  .lp-page-sdcard #sdTable{display:block;min-width:0;table-layout:auto}
+  .lp-page-sdcard #sdTable thead{display:none}
+  .lp-page-sdcard #sdTable tbody{display:block}
+  .lp-page-sdcard #sdTable tr{display:grid;grid-template-columns:minmax(0,1fr) auto;
+    gap:6px 12px;padding:13px 0;border-bottom:1px solid var(--border)}
+  .lp-page-sdcard #sdTable tr:last-child{border-bottom:0}
+  .lp-page-sdcard #sdTable tr.sd-empty{display:block;padding:0;border-bottom:0}
+  .lp-page-sdcard #sdTable td{display:block;min-width:0;padding:0!important;border:0}
+  .lp-page-sdcard #sdTable td[data-label=名称]{grid-column:1/-1;grid-row:1}
+  .lp-page-sdcard #sdTable td[data-label=类型]{grid-column:1/2;grid-row:2}
+  .lp-page-sdcard #sdTable td[data-label=大小]{grid-column:2/3;grid-row:2;text-align:right}
+  .lp-page-sdcard #sdTable td[data-label=操作]{grid-column:1/-1;grid-row:3}
+  .lp-page-sdcard .sd-name{font-size:13px}
+  .lp-page-sdcard .sd-acts{justify-content:flex-start;gap:8px}
+  .lp-page-sdcard .sd-acts>a,.lp-page-sdcard .sd-acts>button{min-height:38px;padding:8px 12px;font-size:11px}
+  .lp-page-sdcard .sd-crumb-btn{min-height:38px;padding:7px 10px;font-size:12px}
+  .lp-page-sdcard .sd-upload input[type=file]{min-height:44px}
+  .lp-page-sdcard .sd-actions>button{flex:1 1 128px}
+}
+/* 桌面：状态卡内 kv 分两列（否则 1300px 宽的卡片里每行只有一个标签一个值），
+   操作按钮不再拉满整行 */
+@media(min-width:860px){
+  .lp-page-sdcard .sd-status{grid-template-columns:1fr 1fr;column-gap:36px}
+  .lp-page-sdcard .sd-actions>button{flex:0 0 auto;min-width:132px}
+}
+.lp-page-sdcard .lp-dialog .field{margin:16px 0 0}
+</style>
+<!-- 统一样式（设计系统 v2）：必须在各页内联样式之后 -->
+<link rel="stylesheet" href="./app.css"><title>SD 卡 · Lucky Studio</title><meta name="theme-color" content="#194638"><link rel="icon" href="data:,"><script src="./demo.js"></script></head><body class="lp-app lp-page-sdcard" data-page="sdcard"><a class="lp-skip" href="#main">跳转到主要内容</a><aside class="lp-sidebar" id="lpSidebar" aria-label="主导航"><a class="lp-brand" href="./index.html"><span class="lp-brand-symbol"><svg class="lp-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m12 3 2.5 6.5L21 12l-6.5 2.5L12 21l-2.5-6.5L3 12l6.5-2.5ZM20 2v4M18 4h4"/></svg></span><span class="lp-brand-name">Lucky Studio<small>幸运翻页机 · 设备控制台</small></span></a><div class="lp-machine"><svg class="lp-icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="6" y="6" width="12" height="12" rx="2"/><path d="M9 2v4M15 2v4M9 18v4M15 18v4M2 9h4M2 15h4M18 9h4M18 15h4"/></svg><div><strong>Lucky Page Controller</strong><small>LOCAL DEVICE WORKSPACE</small></div></div><div class="lp-group-label">运营工作空间</div><nav class="lp-nav"><a href="./index.html"><svg class="lp-icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg><span>抽奖工作台</span></a><a href="./prizes.html"><svg class="lp-icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="8" width="18" height="4" rx="1"/><path d="M5 12v9h14v-9M12 8v13M12 8C5 8 4 2 8 3c3 0 4 5 4 5Zm0 0c7 0 8-6 4-5-3 0-4 5-4 5Z"/></svg><span>奖池管理</span></a><a href="./receipt.html"><svg class="lp-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 3h14v18l-3-2-4 2-4-2-3 2ZM8 8h8M8 12h8M8 16h4"/></svg><span>小票设计</span></a><a href="./pages.html"><svg class="lp-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 3h8l4 4v13H6zM14 3v4h4M9 12h6M9 16h5"/></svg><span>页面内容</span></a><a href="./sound.html"><svg class="lp-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9v6h4l5 4V5L8 9H4Z"/><path d="M16.5 8.5a5 5 0 0 1 0 7M19 6a8.5 8.5 0 0 1 0 12"/></svg><span>音效</span></a><a href="./sdcard.html" class="on" aria-current="page"><svg class="lp-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7a2 2 0 0 1 2-2h5l2 2h7a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z"/><path d="M8 13h8M8 16h5"/></svg><span>SD 卡</span></a></nav><div class="lp-nav-separator"></div><div class="lp-group-label">设备与品牌</div><nav class="lp-nav"><a href="./logo.html"><svg class="lp-icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="3"/><circle cx="8" cy="8" r="1.5"/><path d="m3 17 5-5 5 5 4-4 4 4"/></svg><span>品牌素材</span></a><a href="./calibrate.html"><svg class="lp-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 3v5M5 14v7M12 3v10M12 19v2M19 3v2M19 11v10M2 8h6M9 19h6M16 5h6"/></svg><span>设备标定</span></a><a href="./wifi.html"><svg class="lp-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M2 8a16 16 0 0 1 20 0M5 12a11 11 0 0 1 14 0M8 16a6 6 0 0 1 8 0"/><circle cx="12" cy="20" r=".8"/></svg><span>网络连接</span></a></nav><div class="lp-sidebar-bottom"><div class="lp-demo-note" id="demoNotice" hidden><span>演示环境 · 模拟设备数据</span>本次操作不会驱动设备或打印。<br><button id="resetDemo">重置演示数据</button></div><div class="lp-side-foot"><svg class="lp-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m12 2 9 4v6c0 5-9 10-9 10S3 17 3 12V6ZM8 12l3 3 5-6"/></svg><div><strong>设备本地工作空间</strong><small>Designed for every lucky moment.</small></div></div></div></aside><div class="lp-workspace"><header class="lp-topbar"><div class="lp-breadcrumb"><button class="lp-menu-button" aria-label="打开导航" aria-controls="lpSidebar" aria-expanded="false"><svg class="lp-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16"/></svg></button><span class="lp-breadcrumb-parent">设备工作空间</span><span class="lp-breadcrumb-slash">/</span><span>SD 卡</span></div><div class="lp-topright"><span class="lp-connection" id="connection"><i></i><span>连接设备中</span></span><span class="lp-topline"></span><time id="clock"></time><span class="lp-topinfo" title="设备本地控制台"><svg class="lp-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 11v6M12 7v.1"/></svg></span></div></header><main class="lp-page" id="main"><header class="lp-page-head"><div><div class="lp-eyebrow">STORAGE</div><h1>SD 卡</h1><p class="lp-subtitle">浏览、上传与整理 SD 卡里的文件；卡未插入时抽奖与打印照常工作。</p></div><div class="lp-page-actions"><div class="lp-status-slot"><span class="chip" id="sdChip">读取中…</span></div></div></header><div class="lp-content">
+<div class="msg" id="sdMsg" role="status"></div>
+
+<section class="card" id="sdStatusCard">
+  <div class="card-head">存储状态 <span class="chip" id="sdMountChip">未挂载</span></div>
+  <div class="kv sd-status">
+    <div class="kv-row"><span class="k">卡名</span><span class="v" id="sdCard">—</span></div>
+    <div class="kv-row"><span class="k">挂载点</span><span class="v" id="sdMount">/sdcard</span></div>
+    <div class="kv-row"><span class="k">总容量</span><span class="v" id="sdTotal">—</span></div>
+    <div class="kv-row"><span class="k">已用</span><span class="v" id="sdUsed">—</span></div>
+    <div class="kv-row"><span class="k">可用</span><span class="v" id="sdFree">—</span></div>
+  </div>
+  <div class="sd-bar" id="sdBarWrap" role="progressbar" aria-label="SD 卡已用容量"
+       aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><i id="sdBar"></i></div>
+  <p class="sd-note" id="sdNote">正在读取 SD 卡…</p>
+  <div class="sd-actions">
+    <button class="primary" id="sdMountBtn" type="button">挂载</button>
+    <button id="sdUnmountBtn" type="button" disabled>卸载</button>
+    <button id="sdRefreshBtn" type="button">刷新</button>
+  </div>
+</section>
+
+<section class="card" id="sdFileCard" hidden>
+  <div class="card-head">文件
+    <span class="card-actions"><button class="small-btn" id="sdMkdirBtn" type="button">新建文件夹</button></span>
+  </div>
+  <div class="sd-crumb" id="sdCrumb" aria-label="当前目录"></div>
+  <div class="field sd-upload">
+    <label for="sdFile">上传文件（可多选）</label>
+    <input type="file" id="sdFile" multiple>
+    <div class="hint">选中后立即逐个上传到当前目录；同名文件会被覆盖，大文件请保持本页在前台。</div>
+  </div>
+  <div class="table-scroll">
+    <table id="sdTable">
+      <thead><tr class="hdr"><th>名称</th><th>类型</th><th>大小</th><th>操作</th></tr></thead>
+      <tbody id="sdRows"><tr class="sd-empty"><td colspan="4" class="empty-hint">正在读取文件列表…</td></tr></tbody>
+    </table>
+  </div>
+  <div class="sd-foot" id="sdCount">—</div>
+</section>
+
+<dialog class="lp-dialog" id="sdNameDialog" aria-labelledby="sdNameTitle">
+  <form id="sdNameForm" novalidate>
+    <h3 id="sdNameTitle">新建文件夹</h3>
+    <p id="sdNameHint">名称会显示在文件列表里。</p>
+    <div class="field">
+      <label for="sdNameInput" id="sdNameLabel">名称</label>
+      <input type="text" id="sdNameInput" autocomplete="off" spellcheck="false" maxlength="120">
+    </div>
+    <div class="lp-dialog-actions">
+      <button type="button" id="sdNameCancel">取消</button>
+      <button type="submit" class="primary" id="sdNameOk">确定</button>
+    </div>
+  </form>
+</dialog>
+</div>
+<footer class="lp-footer"><span><i class="lp-dot"></i>Lucky Studio <span style="color:#bdc8b9">/</span> 幸运翻页机控制台</span><span id="footerMode">本地连接 · 无需外部资源</span></footer></main></div><div class="lp-scrim"></div><nav class="lp-mobile-nav" aria-label="移动端导航"><a href="./index.html"><svg class="lp-icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg><span>抽奖工作台</span></a><a href="./prizes.html"><svg class="lp-icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="8" width="18" height="4" rx="1"/><path d="M5 12v9h14v-9M12 8v13M12 8C5 8 4 2 8 3c3 0 4 5 4 5Zm0 0c7 0 8-6 4-5-3 0-4 5-4 5Z"/></svg><span>奖池管理</span></a><a href="./receipt.html"><svg class="lp-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 3h14v18l-3-2-4 2-4-2-3 2ZM8 8h8M8 12h8M8 16h4"/></svg><span>小票设计</span></a><a href="./pages.html"><svg class="lp-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 3h8l4 4v13H6zM14 3v4h4M9 12h6M9 16h5"/></svg><span>页面内容</span></a><button aria-label="更多导航" aria-controls="lpSidebar"><svg class="lp-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16"/></svg><span>更多</span></button></nav><script src="./app.js"></script><script src="./sdcard.js"></script></body></html>

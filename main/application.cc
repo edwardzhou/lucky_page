@@ -17,6 +17,7 @@
 #include "motion/action_paging.h"
 #include "printer/printer_uart.h"
 #include "speaker/speaker_service.h"
+#include "storage/sd_card.h"
 #include "page_adjust.h"
 #include "page_mapping.h"
 #include "settings.h"
@@ -319,6 +320,8 @@ void Application::Start() {
 
     InitNvs();
     InitFilesystems();
+    // SD 卡：延迟 1s 挂载，失败只降级（不影响抽奖/打印/Web，规则 7）
+    sd_card::Initialize();
     InitMappings();
     InitMotion();
     InitPrinter();

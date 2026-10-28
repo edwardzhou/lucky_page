@@ -8,6 +8,8 @@ file(GLOB WEB_SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/web/*.cc")
 # 喇叭（I2S 欢迎音，2026-10-25）：speaker_service 是驱动层不上测试宿主，
 # 纯逻辑 wav_data.cc 由 test_apps 单独收录
 file(GLOB SPEAKER_SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/speaker/*.cc")
+# SD 卡服务（SPI，2026-10-28 移植自 dms-pager）
+file(GLOB STORAGE_SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/storage/*.cc")
 
 set(BOARD_SOURCES
     "${CMAKE_CURRENT_SOURCE_DIR}/boards/common/button.cc"
@@ -32,6 +34,7 @@ idf_component_register(
         ${WIFI_SOURCES}
         ${WEB_SOURCES}
         ${SPEAKER_SOURCES}
+        ${STORAGE_SOURCES}
         ${BOARD_SOURCES}
     # 点阵字库嵌入固件（图形模式用；放固件里而不是 SPIFFS，
     # 因为烧固件/OTA 会重写 SPIFFS 资源分区，用户素材会丢 —— 见评审 G3）
@@ -55,6 +58,10 @@ idf_component_register(
         esp_driver_usb_serial_jtag
         # 喇叭 I2S 新驱动（v6 起独立组件，speaker_service.cc 用）
         esp_driver_i2s
+        # SD 卡（SPI + FAT）：storage/sd_card.cc 用
+        esp_driver_spi
+        fatfs
+        sdmmc
         dw_printer
         button
         esp_wifi
