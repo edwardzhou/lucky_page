@@ -87,3 +87,7 @@ CONFIG_LUCKY_SKIP_HOMING_ON_BOOT=n
 
 # 本板唯一引出串口是 USB-Serial-JTAG（usbmodem）；主控制台切过去
 CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG=y
+
+# SD 卡 FAT 使用 CP936（GBK）：与 dms-pager 卡上的中文文件名一致；
+# 应用层在 SD 边界做 UTF-8↔GBK 转换（main/storage/sd_name_codec）
+CONFIG_FATFS_CODEPAGE_936=y

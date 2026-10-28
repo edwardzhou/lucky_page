@@ -142,7 +142,7 @@ TTL 热敏打印机出票；Web 页面配置奖池/小票版式/Logo/标定/WiFi
 | **页面布局 = artnet 风格**（用户指定）| 页标题 + 卡片标题带下边框 + 状态行（标签左/加粗值右 + 「修改」小按钮）+ **通栏主操作按钮**（`.action-btn.primary/danger`）+ 居中空状态提示 + 内联编辑区（`.ip-edit-area`）；**保留本项目菜单与配色**，不采用 artnet 的 bottom tab 与配色 |
 | 页面内容 | 2026-10-26 起新增第 7 页 `pages.html`：每页文字 + 图片（从素材库选）；模板块 `page_text`/`page_image`；图片仅 canvas 生效；接口 `/api/assets`、`/api/pages/content` |
 | 音效 | 第 8 页 `sound.html`：欢迎/中奖/落空可上传自定义（浏览器转 24k mono WAV，≤4s），存 media 分区尾部 3×192KiB；接口 `/api/sounds`；未上传回落默认 |
-| SD 卡 | 第 9 页 `sdcard.html`：文件管理（列表/上传/下载/删除/重命名/新建目录/挂载卸载）；**有卡时素材优先存 SD**（`/sdcard/lucky/{assets,sounds}`），无卡回落 flash 槽；接口 `/api/sdcard/*` |
+| SD 卡 | 第 9 页 `sdcard.html`：文件管理（列表/上传/下载/删除/重命名/新建目录/挂载卸载）；**有卡时素材优先存 SD**（`/sdcard/lucky/{assets,sounds}`），无卡回落 flash 槽；接口 `/api/sdcard/*`；FATFS **CP936** + `storage/sd_name_codec` 做 UTF-8↔GBK；`HTTPD_MAX_URI_LEN=1024`（长中文路径） |
 | 宽度 | **6 页统一 `--w-page:760px`**；唯一例外是小票编辑页 `body.wide`（要与属性栏并排）。WiFi 页曾短暂用 480px 窄列（artnet 观感），用户要求"与其他页一致"后已取消 → **宽度例外必须显式枚举进断言**（`mobile_layout_check.py` 的 `WANT` 表 + `web_smoke.py` 真机复核），不能悄悄放宽 |
 | 风险操作验证纪律 | "真的断开一次""真的设静态 IP"这类会改变可达性的验证**走串口**，HTTP 只测校验负例与可逆项（改热点名只影响 AP 接口，安全）|
 

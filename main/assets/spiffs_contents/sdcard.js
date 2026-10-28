@@ -58,8 +58,8 @@
    return d===ROOT?ROOT+name:d+'/'+name;
  }
  function displayPath(p){const v=normalizePath(p);return v===ROOT?'根目录':v}
- // 逐段 encodeURIComponent：保留 / 分隔符，中文/空格/% 都会被编码；
- // 固件 QueryValue 会解码 %xx，且其查询值缓冲只有 96 字节，整体编码中文路径会过长
+ // 逐段 encodeURIComponent：/ 保留为分隔符，其余（中文/空格/% 等）按 encodeURIComponent 编码；
+ // 固件 QueryValue 会解码 %xx，且其查询值缓冲只有 96 字节，多编码一个 / 就多占 2 字节
  function encodePath(p){return normalizePath(p).split('/').map(encodeURIComponent).join('/')}
  function nameError(name,label){
    const v=String(name||'');
@@ -467,6 +467,7 @@
  let pendingName=null;
  function askName(opts){
    const dlg=$('sdNameDialog'),input=$('sdNameInput');
+   if(pendingName)return Promise.resolve(null);   // 已有命名对话框在等待：忽略重复触发，避免把上一次的 Promise 挂死
    if(!dlg||!input||typeof dlg.showModal!=='function'){
      // 极老浏览器没有 <dialog>：退回 prompt，功能不中断
      const value=window.prompt(opts.title||'名称',opts.value||'');

@@ -22,8 +22,10 @@
 #include "printer/page_content.h"
 #include "storage/sd_card.h"
 #include "storage/sd_paths.h"
+#include "storage/sd_name_codec.h"
 
 #include <dirent.h>
+#include <errno.h>
 #include <sys/stat.h>
 #include "speaker/sound_decode.h"
 #include "speaker/sound_store.h"
@@ -652,10 +654,14 @@ esp_err_t WebServer::TimeSetHandler(httpd_req_t* req) {
 
 namespace {
 std::string QueryValue(httpd_req_t* req, const char* key) {
-    char q[160];
-    char v[96] = "";
-    if (httpd_req_get_url_query_str(req, q, sizeof(q)) != ESP_OK) return "";
-    if (httpd_query_key_value(q, key, v, sizeof(v)) != ESP_OK) return "";
+    // 动态长度：查询串/参数值都可能很长（中文路径 encodeURIComponent 后 1 字 ≈ 9 字节）；
+    // 曾用固定 160/96 缓冲 → 长文件名/多级目录被截断成"非法路径"（评审 42 遗留）
+    size_t qlen = httpd_req_get_url_query_len(req) + 1;
+    if (qlen <= 1) return "";
+    std::string q(qlen, '\0');
+    if (httpd_req_get_url_query_str(req, &q[0], qlen) != ESP_OK) return "";
+    std::string v(qlen, '\0');
+    if (httpd_query_key_value(q.c_str(), key, &v[0], v.size()) != ESP_OK) return "";
     // URL 解码（素材名常含中文：%E6%B5%8B...；2026-10-26 真机发现原名被原样存下）
     std::string out;
     auto hex = [](char c) -> int {
@@ -664,19 +670,37 @@ std::string QueryValue(httpd_req_t* req, const char* key) {
         if (c >= 'A' && c <= 'F') return c - 'A' + 10;
         return -1;
     };
-    for (size_t i = 0; v[i] != '\0'; ++i) {
-        if (v[i] == '%' && hex(v[i + 1]) >= 0 && hex(v[i + 2]) >= 0) {
-            out.push_back((char)((hex(v[i + 1]) << 4) | hex(v[i + 2])));
+    const char* p = v.c_str();
+    for (size_t i = 0; p[i] != '\0'; ++i) {
+        if (p[i] == '%' && hex(p[i + 1]) >= 0 && hex(p[i + 2]) >= 0) {
+            out.push_back((char)((hex(p[i + 1]) << 4) | hex(p[i + 2])));
             i += 2;
-        } else if (v[i] == '+') {
+        } else if (p[i] == '+') {
             out.push_back(' ');
         } else {
-            out.push_back(v[i]);
+            out.push_back(p[i]);
         }
     }
     return out;
 }
 }  // namespace
+
+// SD 路径：Web 层是 UTF-8，FATFS 配置 CP936 → 逐段转 GBK 后拼到 /sdcard 下
+std::string SdFsPath(const std::string& rel) {
+    std::string norm = sd_paths::Normalize(rel);
+    if (norm.empty()) return "";
+    if (norm == "/") return sd_paths::kRoot;
+    std::string out = sd_paths::kRoot;
+    size_t pos = 1;
+    while (pos <= norm.size()) {
+        size_t slash = norm.find('/', pos);
+        std::string seg = norm.substr(pos, (slash == std::string::npos ? norm.size() : slash) - pos);
+        if (!seg.empty()) out += "/" + sd_name_codec::ToFs(seg);
+        if (slash == std::string::npos) break;
+        pos = slash + 1;
+    }
+    return out;
+}
 
 // ============================ SD 卡文件管理（2026-10-28）============================
 esp_err_t WebServer::SdStatusHandler(httpd_req_t* req) {
@@ -696,7 +720,7 @@ esp_err_t WebServer::SdStatusHandler(httpd_req_t* req) {
 esp_err_t WebServer::SdListHandler(httpd_req_t* req) {
     std::string rel = QueryValue(req, "path");
     if (rel.empty()) rel = "/";
-    std::string full = sd_paths::Full(rel);
+    std::string full = SdFsPath(rel);
     if (full.empty()) return SendError(req, "非法路径");
     cJSON* root = cJSON_CreateObject();
     cJSON_AddBoolToObject(root, "mounted", sd_card::IsMounted());
@@ -715,7 +739,7 @@ esp_err_t WebServer::SdListHandler(httpd_req_t* req) {
         while ((e = readdir(dir)) != nullptr) {
             if (strcmp(e->d_name, ".") == 0 || strcmp(e->d_name, "..") == 0) continue;
             cJSON* o = cJSON_CreateObject();
-            cJSON_AddStringToObject(o, "name", e->d_name);
+            cJSON_AddStringToObject(o, "name", sd_name_codec::FromFs(e->d_name).c_str());
             std::string fp = full + "/" + e->d_name;
             struct stat st = {};
             if (stat(fp.c_str(), &st) == 0) {
@@ -746,14 +770,17 @@ esp_err_t WebServer::SdUploadHandler(httpd_req_t* req) {
     std::string name = QueryValue(req, "name");
     if (rel.empty()) rel = "/";
     if (!sd_paths::ValidName(name)) return SendError(req, "文件名非法");
-    std::string full = sd_paths::Full(rel);
+    std::string full = SdFsPath(rel);
     if (full.empty()) return SendError(req, "非法路径");
     struct stat dst = {};
     if (stat(full.c_str(), &dst) != 0 || !S_ISDIR(dst.st_mode))
         return SendError(req, "目标目录不存在");
-    std::string path = full + "/" + name;
+    std::string path = full + "/" + sd_name_codec::ToFs(name);
     FILE* f = fopen(path.c_str(), "wb");
-    if (f == nullptr) return SendError(req, "文件创建失败（卡满或只读？）", 500);
+    if (f == nullptr) {
+        ESP_LOGW("SDAPI", "fopen %s 失败 errno=%d (%s)", path.c_str(), errno, strerror(errno));
+        return SendError(req, "文件创建失败（卡满或只读？）", 500);
+    }
     char buf[4096];
     int remaining = (int)req->content_len;
     bool ok = true;
@@ -774,7 +801,7 @@ esp_err_t WebServer::SdUploadHandler(httpd_req_t* req) {
 
 esp_err_t WebServer::SdDownloadHandler(httpd_req_t* req) {
     if (!sd_card::IsMounted()) return SendError(req, "SD 卡未挂载", 503);
-    std::string full = sd_paths::Full(QueryValue(req, "path"));
+    std::string full = SdFsPath(QueryValue(req, "path"));
     if (full.empty()) return SendError(req, "非法路径");
     FILE* f = fopen(full.c_str(), "rb");
     if (f == nullptr) return SendError(req, "文件不存在", 404);
@@ -794,7 +821,7 @@ esp_err_t WebServer::SdDownloadHandler(httpd_req_t* req) {
 
 esp_err_t WebServer::SdDeleteHandler(httpd_req_t* req) {
     if (!sd_card::IsMounted()) return SendError(req, "SD 卡未挂载", 503);
-    std::string full = sd_paths::Full(QueryValue(req, "path"));
+    std::string full = SdFsPath(QueryValue(req, "path"));
     if (full.empty() || full == sd_paths::kRoot) return SendError(req, "非法路径");
     struct stat st = {};
     if (stat(full.c_str(), &st) != 0) return SendError(req, "文件不存在", 404);
@@ -813,10 +840,10 @@ esp_err_t WebServer::SdRenameHandler(httpd_req_t* req) {
     std::string rel = (cJSON_IsString(pj) && pj->valuestring) ? pj->valuestring : "";
     std::string name = (cJSON_IsString(nj) && nj->valuestring) ? nj->valuestring : "";
     cJSON_Delete(root);
-    std::string full = sd_paths::Full(rel);
+    std::string full = SdFsPath(rel);
     if (full.empty() || full == sd_paths::kRoot) return SendError(req, "非法路径");
     if (!sd_paths::ValidName(name)) return SendError(req, "新文件名非法");
-    std::string dst = full.substr(0, full.find_last_of('/') + 1) + name;
+    std::string dst = full.substr(0, full.find_last_of('/') + 1) + sd_name_codec::ToFs(name);
     remove(dst.c_str());   // FAT rename 不覆盖
     if (rename(full.c_str(), dst.c_str()) != 0) return SendError(req, "重命名失败", 500);
     return SendJson(req, "{\"status\":\"renamed\"}");
@@ -828,10 +855,11 @@ esp_err_t WebServer::SdMkdirHandler(httpd_req_t* req) {
     std::string name = QueryValue(req, "name");
     if (rel.empty()) rel = "/";
     if (!sd_paths::ValidName(name)) return SendError(req, "目录名非法");
-    std::string full = sd_paths::Full(rel);
+    std::string full = SdFsPath(rel);
     if (full.empty()) return SendError(req, "非法路径");
-    if (mkdir((full + "/" + name).c_str(), 0777) != 0)
-        return SendError(req, "创建目录失败（已存在？）", 500);
+    std::string dir = full + "/" + sd_name_codec::ToFs(name);
+    if (mkdir(dir.c_str(), 0777) != 0 && errno != EEXIST)
+        return SendError(req, "创建目录失败（卡满或只读？）", 500);
     return SendJson(req, "{\"status\":\"created\"}");
 }
 
@@ -1649,6 +1677,9 @@ esp_err_t WebServer::StaticHandler(httpd_req_t* req) {
 bool WebServer::Start() {
     httpd_config_t config = HTTPD_DEFAULT_CONFIG();
     config.max_uri_handlers = kMaxUriHandlers;
+    // 长中文路径（encodeURIComponent 后 1 字 ≈ 9 字节）需要更长的 URI 缓冲；
+    // 默认 512 会让多级中文目录直接 414（评审 42 真机发现）
+    config.max_uri_len = 1024;
     // 浏览器在编辑模板时会连发请求（每敲一键一次预览）。默认 max_open_sockets=7，
     // 连接一多就直接失败；LRU 清理让服务端优先回收最久未用的连接而不是拒绝新连接。
     config.max_open_sockets = 12;
